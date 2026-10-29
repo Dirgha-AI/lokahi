@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lokahi-protocol"
+version = "0.1.2"
+description = "Boundary Enforcement and Disjoint-Consent Protocol for Autonomous Agent Collectives (Operationalizing Ahimsa as a Timeout Rule)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+  {name = "Salik Shah"},
+  {name = "Sabin Ranjit"}
+]
+keywords = ["ai-safety", "multi-agent", "boundaries", "mcp-gateway", "cooperative-ai", "ahimsa", "astra", "governance"]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Dirgha-AI/lokahi"
+Repository = "https://github.com/Dirgha-AI/lokahi"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tools*"]
