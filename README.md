@@ -2,6 +2,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
+  <a href="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml"><img src="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="tests/test_core.py"><img src="https://img.shields.io/badge/unit%20tests-32%20passed-brightgreen.svg" alt="Unit Tests: 32 passed"></a>
   <a href="tools/run_evals.py"><img src="https://img.shields.io/badge/red--team%20corpus-50%2F50%20passed-brightgreen.svg" alt="Red-Team Corpus: 50/50 passed"></a>
   <a href="https://github.com/Dirgha-AI/arniko"><img src="https://img.shields.io/badge/engine-Arniko%20%2B%20DTrackAuditor-orange.svg" alt="Engine: Arniko + DTrackAuditor"></a>
@@ -104,7 +105,8 @@ after modifying entry 2: chain valid = (False, index 2)
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Engineering note: from reference core to production stack (80/20 open-source reuse) and the 5 hard problems |
 | [`skills/lokahi-protocol/SKILL.md`](skills/lokahi-protocol/SKILL.md) | Agent Skills (`agentskills.io/v1`) SOP for autonomous agents negotiating LOKAHI boundaries |
 | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | GitHub Actions CI matrix running unit tests, demo, and 50-scenario benchmark on Python 3.10, 3.11, and 3.12 |
-| [`LICENSE`](LICENSE) | Apache-2.0 license for software; CC-BY-4.0 notice for benchmark corpus |
+| [`LICENSE`](LICENSE) | Apache-2.0 license for software |
+| [`data/LICENSE`](data/LICENSE) | CC-BY-4.0 notice for the benchmark corpus |
 
 ---
 
@@ -128,4 +130,4 @@ after modifying entry 2: chain valid = (False, index 2)
 ## License
 
 * **Software:** [Apache-2.0](LICENSE)
-* **Red-Team Benchmark Corpus (`data/`):** [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/)
+* **Red-Team Benchmark Corpus (`data/`):** [CC-BY-4.0](data/LICENSE)
