@@ -17,6 +17,7 @@ A node publishes one signed JSON document. Every field is required.
 | `expires` | ISO 8601 string | Expiration instant (with timezone); expired or unreadable manifests deny all requests |
 | `steward` | string | Designated steward URI (`did:web`) surviving the principal |
 | `signature` | string | Cryptographic signature over canonical JSON |
+| `physical_envelope` | object (optional) | Embodied robotics bounds (`max_contact_force_n`, `max_joint_torque_nm`, `max_tendon_tension_n`, `max_cartesian_velocity_ms`, `workspace_bounds_m`, `timeout_interlock_mode`) |
 
 Canonical JSON (RFC 8785 JCS subset) requires sorted keys, whitespace stripping (separators `(",", ":")`), and UTF-8 encoding. Any manifest that fails to parse, fails verification, or carries an unreadable or timezone-naive expiry is treated as expired.
 
@@ -27,18 +28,18 @@ Denials are ordered by cost and certainty so that no downstream rule can rescue 
 1. `signature` empty → **forbidden** `unsigned_manifest`
 2. `signature` does not verify → **forbidden** `unverifiable_manifest`
 3. `expires` in the past, timezone-naive, or unreadable → **forbidden** `expired_manifest`
-4. any requested feature in `forbidden_targets` → **forbidden** `forbidden_target:<name>`
-5. any requested feature absent from `informational` → **forbidden** `feature_out_of_manifest:<name>`
+4. any requested feature in `forbidden_targets` (or `damping_kd <= 0`) → **forbidden** `forbidden_target:<name>`
+5. any requested feature absent from `informational` (or `physical_params` outside `physical_envelope`) → **forbidden** `feature_out_of_manifest:<name>` / `physical_*_exceeded`
 6. `action.jurisdiction` differs from `manifest.jurisdiction` → **forbidden** `jurisdiction_mismatch`
 7. `action.stores_in` contains any target outside `manifest.residency` → **forbidden** `residency_violation:<name>`
-8. `action.declared_by` is set and `action.exceptions_used >= manifest.exceptions["safety_critical"]` → **forbidden** `exception_rate_exceeded`
+8. `action.declared_by` is set and `max(action.exceptions_used, ledger.count_exceptions_in_window()) >= manifest.exceptions["safety_critical"]` → **forbidden** `exception_rate_exceeded`
 9. `action.reversible` is true, `action.population_affecting` is false, and `action.declared_by` is null → **compliant** `within_manifest`
-10. any ring participant has `node == action.requester` → **forbidden** `requester_in_ring`
-11. `action.requester_operator` is set and any ring participant has `operator == action.requester_operator` → **forbidden** `requester_operator_in_ring`
-12. `action.declared_by` is set and any ring participant has `operator == action.declared_by` → **forbidden** `declaring_party_in_ring`
-13. two or more distinct non-conflicted operators vote `"no"` → **forbidden** `suspended_by_ring` (2-of-3 suspension veto)
-14. `timed_out` is true with fewer than three distinct non-equivocating operators voting `"yes"` → **forbidden** `non_response`
-15. fewer than three distinct non-equivocating operators voting `"yes"` → **escalate** `insufficient_disjoint_consent`; otherwise → **compliant** `quorum_met`
+10. **Rule 13 (Evaluated prior to conflict rejection so a compromised caller cannot mask a safety freeze):** two or more distinct, non-conflicted operators vote `"no"` → **forbidden** `suspended_by_ring` (2-of-3 suspension veto)
+11. **Rule 10:** any ring participant has `node == action.requester` → **forbidden** `requester_in_ring`
+12. **Rule 11:** `action.requester_operator` is set and any ring participant has `operator == action.requester_operator` → **forbidden** `requester_operator_in_ring`
+13. **Rule 12:** `action.declared_by` is set and any ring participant has `operator == action.declared_by` → **forbidden** `declaring_party_in_ring`
+14. **Rule 14 (*The Ahimsa Timeout Rule*):** `timed_out` is true with fewer than three distinct non-equivocating operators voting `"yes"` → **forbidden** `non_response`
+15. **Rule 15:** fewer than three distinct non-equivocating operators voting `"yes"` → **escalate** `insufficient_disjoint_consent`; otherwise → **compliant** `quorum_met`
 
 
 ### 2.1 Normative Design Invariant: *Ahimsa* as a Timeout Rule (`Rule 14`) & Collective Restraint (`Rule 13`)

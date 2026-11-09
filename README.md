@@ -3,7 +3,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
   <a href="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml"><img src="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="tests/test_core.py"><img src="https://img.shields.io/badge/unit%20tests-32%20passed-brightgreen.svg" alt="Unit Tests: 32 passed"></a>
+  <a href="tests/test_core.py"><img src="https://img.shields.io/badge/unit%20tests-39%20passed-brightgreen.svg" alt="Unit Tests: 39 passed"></a>
   <a href="tools/run_evals.py"><img src="https://img.shields.io/badge/red--team%20corpus-50%2F50%20passed-brightgreen.svg" alt="Red-Team Corpus: 50/50 passed"></a>
   <a href="https://github.com/Dirgha-AI/arniko"><img src="https://img.shields.io/badge/engine-Arniko%20%2B%20DTrackAuditor-orange.svg" alt="Engine: Arniko + DTrackAuditor"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/protocol-MCP%20Gateway-purple.svg" alt="Protocol: MCP"></a>
@@ -30,13 +30,14 @@ As diagnosed by [Aggarwal et al. in *ASTRA: AI Safety, Trust, & Risk Assessment*
 
 ## Scope & Honest Boundaries of `v0.1.2` (Read First)
 
-This repository contains the **executable v0.1.2 reference core** ([`tools/lokahi.py`](tools/lokahi.py)), the **normative 15-rule specification** ([`docs/SPEC.md`](docs/SPEC.md)), the **production architecture blueprint** ([`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)), and the **50-scenario machine-checkable red-team corpus** ([`data/LOKAHI_RedTeam_Corpus_v1.0.csv`](data/LOKAHI_RedTeam_Corpus_v1.0.csv)).
+This repository contains the **executable v0.1.2 reference core** ([`tools/lokahi.py`](tools/lokahi.py)), the **Ghostproof Somatic Judgment Layer** ([`tools/ghostproof.py`](tools/ghostproof.py)), the **normative 15-rule specification** ([`docs/SPEC.md`](docs/SPEC.md)), the **production architecture blueprint** ([`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)), the **50-scenario machine-checkable red-team corpus** ([`data/LOKAHI_RedTeam_Corpus_v1.0.csv`](data/LOKAHI_RedTeam_Corpus_v1.0.csv)), and the **40-scenario hollow-oversight benchmark** ([`data/Ghostproof_40.csv`](data/Ghostproof_40.csv)).
 
 **What runs today (zero dependencies, Python 3.10+):**
 - Canonical JSON (RFC 8785 subset) manifest signing, verification, and timezone-strict expiration checks.
-- Pre-flight evaluation across **15 ordered decision rules** (enumerated informational permissions, forbidden optimization targets, jurisdiction/residency enforcement, emergency rate-cap checks, unconditional conflict-of-interest exclusion, anti-Sybil operator collapse, equivocation disqualification, 2-of-3 dissenting suspension veto, and *ahimsa* timeout refusal).
-- Append-only, tamper-evident SHA-256 hash-chained decision ledger with retroactive edit and reorder detection.
-- **32 unit tests** ([`tests/test_core.py`](tests/test_core.py)) and a **deterministic benchmark runner** ([`tools/run_evals.py`](tools/run_evals.py)) evaluating all 50 adversarial scenarios + 200 benign fast-path tasks.
+- Pre-flight evaluation across **15 ordered decision rules** (enumerated informational permissions, forbidden optimization targets, physical robotics force/torque/workspace envelopes, jurisdiction/residency enforcement, stateful emergency rate-cap checks, priority 2-of-3 dissenting suspension veto, unconditional conflict-of-interest exclusion, anti-Sybil operator collapse, equivocation disqualification, and *ahimsa* timeout refusal).
+- **Ghostproof Somatic Judgment Layer** (`tools/ghostproof.py`): Four-Axis Somatic Delegation Router, token-level Shannon entropy & top-2 margin hesitation seam audit, daily unassisted Sparring Nodes, and Brier calibration across 2–3 peer Crux Pods.
+- Append-only, tamper-evident SHA-256 hash-chained decision ledger with retroactive edit, reorder, and sliding-window exception tracking.
+- **39 unit tests** ([`tests/test_core.py`](tests/test_core.py)) and **three deterministic benchmark runners**: [`tools/run_evals.py`](tools/run_evals.py) (50 adversarial scenarios from `test_vector_json` + 200 benign fast-path tasks), [`tools/run_ghostproof_evals.py`](tools/run_ghostproof_evals.py) (40 hollow-oversight scenarios + 100-step workflow trace), and [`tools/run_kinetic_evals.py`](tools/run_kinetic_evals.py) (90 embodied robotics trajectory injections across WallFin, DEX ARM 01, and Lite3).
 
 > **Engineering Note (Bug Caught by Test Suite):** During initial development, our test suite caught a real rule-ordering flaw: the `requester_in_ring` check was nested inside the emergency branch, allowing a requesting node to clear its own consent ring whenever no emergency was declared. Rules 10–12 now execute unconditionally across all ring participants prior to quorum evaluation.
 
@@ -57,7 +58,7 @@ LOKAHI `v0.1.2` has **zero external dependencies** and requires Python 3.10+.
 git clone https://github.com/Dirgha-AI/lokahi.git
 cd lokahi
 
-# 1. Run the 32 core unit tests
+# 1. Run the 39 core unit tests
 python3 tests/test_core.py
 
 # 2. Run the 11-scenario interactive gateway walkthrough
@@ -65,6 +66,12 @@ python3 demo.py
 
 # 3. Run the 50-scenario red-team benchmark + 200-task benign suite
 python3 tools/run_evals.py
+
+# 4. Run the 40-scenario Ghostproof hollow-oversight benchmark
+python3 tools/run_ghostproof_evals.py
+
+# 5. Run the 90-trial Kinetic Ahimsa embodied robotics verification
+python3 tools/run_kinetic_evals.py
 ```
 
 ### Demo Output (`python3 demo.py`)
@@ -95,12 +102,16 @@ after modifying entry 2: chain valid = (False, index 2)
 
 | Path | Description |
 |---|---|
-| [`tools/lokahi.py`](tools/lokahi.py) | Reference core v0.1.2: canonical JSON, `Manifest`, 15-rule `evaluate()`, `Consent` ring, and SHA-256 `Ledger` |
-| [`tools/run_evals.py`](tools/run_evals.py) | Deterministic benchmark runner: evaluates all 50 red-team scenarios against strict assertions, compares against a content-only baseline, and runs 200 benign fast-path tasks |
-| [`tests/test_core.py`](tests/test_core.py) | 32 unit tests covering all 15 normative decision rules, equivocation, rate caps, and ledger tamper/reorder detection |
+| [`tools/lokahi.py`](tools/lokahi.py) | Reference core v0.1.2: canonical JSON, `Manifest`, 15-rule `evaluate()`, `Consent` ring, `physical_envelope` interlocks, and SHA-256 `Ledger` |
+| [`tools/ghostproof.py`](tools/ghostproof.py) | Somatic Judgment Layer: Four-Axis Delegation Router, Shannon Entropy Seam Audit, Sparring Nodes, and Brier Calibration |
+| [`tools/run_evals.py`](tools/run_evals.py) | Data-driven benchmark runner: evaluates all 50 red-team scenarios from `test_vector_json`, compares against a content-only baseline, and runs 200 benign fast-path tasks |
+| [`tools/run_ghostproof_evals.py`](tools/run_ghostproof_evals.py) | Evaluates the 40-scenario `Ghostproof-40` hollow-oversight benchmark and 100-step workflow trace |
+| [`tools/run_kinetic_evals.py`](tools/run_kinetic_evals.py) | Evaluates 90 adversarial robotics trajectory injections across WallFin (`100 Hz`), DEX ARM 01 (`1,000 Hz`), and Lite3 (`60 Hz`) |
+| [`tests/test_core.py`](tests/test_core.py) | 39 unit tests covering all 15 normative decision rules, equivocation, stateful rate caps, Ghostproof routing, Kinetic Ahimsa, and ledger tamper/reorder detection |
 | [`demo.py`](demo.py) | One-command interactive walkthrough of a municipal water board manifest across 11 verdicts |
-| [`data/LOKAHI_RedTeam_Corpus_v1.0.csv`](data/LOKAHI_RedTeam_Corpus_v1.0.csv) | Machine-readable 50-scenario adversarial benchmark with `duology_source`, `threat_model`, `expected_verdict`, `expected_reason`, and `verified` provenance |
+| [`data/LOKAHI_RedTeam_Corpus_v1.0.csv`](data/LOKAHI_RedTeam_Corpus_v1.0.csv) | Machine-readable 50-scenario adversarial benchmark with `duology_source`, `threat_model`, `expected_verdict`, `expected_reason`, and `test_vector_json` |
 | [`data/LOKAHI_RedTeam_Corpus_v1.0.md`](data/LOKAHI_RedTeam_Corpus_v1.0.md) | Human-readable benchmark tables across all 6 failure families |
+| [`data/Ghostproof_40.csv`](data/Ghostproof_40.csv) | 40-scenario hollow-oversight & somatic judgment benchmark across 4 operational domains |
 | [`docs/SPEC.md`](docs/SPEC.md) | Normative specification: manifest schema, 15-rule decision order (including *Ahimsa* timeout rule `Rule 14`), quorum rules, and open questions |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Engineering note: from reference core to production stack (80/20 open-source reuse) and the 5 hard problems |
 | [`skills/lokahi-protocol/SKILL.md`](skills/lokahi-protocol/SKILL.md) | Agent Skills (`agentskills.io/v1`) SOP for autonomous agents negotiating LOKAHI boundaries |

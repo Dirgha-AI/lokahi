@@ -21,7 +21,7 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Run Core Unit Tests (32 Tests)
+    - name: Run Core Unit Tests (39 Tests)
       run: |
         python tests/test_core.py
 
@@ -32,3 +32,11 @@ jobs:
     - name: Run Red-Team Benchmark & Baseline Harness (50 Adversarial + 200 Benign)
       run: |
         python tools/run_evals.py
+
+    - name: Run Ghostproof-40 Hollow-Oversight Benchmark (40 Scenarios + 100-Step Trace)
+      run: |
+        python tools/run_ghostproof_evals.py
+
+    - name: Run Kinetic Ahimsa Embodied Robotics Verification (90 Adversarial + 90 Benign)
+      run: |
+        python tools/run_kinetic_evals.py

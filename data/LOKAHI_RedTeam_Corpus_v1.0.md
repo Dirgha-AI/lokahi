@@ -6,7 +6,7 @@ A machine-checkable benchmark of **50 adversarial failure scenarios** for autono
 
 ## Source Discipline & Verification
 - **50 Scenarios** across 6 failure families: Triage & Tiering (10), Autonomy & Auto-Authorization (10), Jurisdiction & Fusion (10), Persona & Identity (10), Persuasion & Hesitation (5), Archive & Override (5).
-- **Provenance:** 34 scenarios (`verified = yes`) quote or directly operationalize a verbatim chapter passage from the 245,468-word manuscript; 16 scenarios (`verified = needs-author-review`) generalize recurring mechanisms across the duology and are flagged transparently for external peer labeling.
+- **Provenance:** 34 scenarios (`verified = yes`) quote or directly operationalize a verbatim chapter passage from the 245,468-word manuscript; 16 scenarios (`verified = needs-author-review`) generalize recurring mechanisms across the duology and are flagged transparently for external peer labeling in Milestone 1.
 - **Deterministic CI Harness:** Every row carries an explicit `expected_verdict` and `expected_reason` checked by `tools/run_evals.py`.
 
 | ID | Family | Title | Threat Model | Duology Source | Boundary Crossed | Expected Verdict | Expected Reason | Provenance |

@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Unit tests for the LOKAHI v0.1.2 reference core (32 tests).
+"""Unit tests for LOKAHI v0.1.2, Ghostproof (Paper 5), and Kinetic Ahimsa (Paper 6).
 
-Run: python3 tests/test_core.py
+Run: py tests/test_core.py
 """
 import os
 import sys
 import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tools")))
+import ghostproof
 import lokahi
+from ghostproof import DelegationTask, audit_hesitation_seams, route_delegation
 from lokahi import Action, Consent, Ledger, Manifest, Signer, canonical, evaluate
 
 KEY = b"prototype-key-not-for-production"
@@ -147,6 +149,30 @@ class TestEvaluation(unittest.TestCase):
         self.assertEqual(d.verdict, lokahi.FORBIDDEN)
         self.assertEqual(d.reasons, ["exception_rate_exceeded"])
 
+    def test_stateful_ledger_sliding_window_exception_cap(self):
+        ledger = Ledger()
+        for i in range(3):
+            act = make_action(declared_by="org:mayor", exceptions_used=i)
+            dec = self.run_eval(act, ledger=ledger)
+            ledger.append(dec, act, self.manifest, ts=NOW - 3600)
+        # 4th call within 24h window with exceptions_used=0 is still caught by stateful ledger!
+        d4 = self.run_eval(make_action(declared_by="org:mayor", exceptions_used=0), ledger=ledger)
+        self.assertEqual(d4.verdict, lokahi.FORBIDDEN)
+        self.assertEqual(d4.reasons, ["exception_rate_exceeded"])
+
+    def test_forged_forbidden_calls_do_not_exhaust_exception_budget(self):
+        """Verify Rule 8 DoS fix: rejected/forbidden spam with declared_by set cannot exhaust the node's emergency budget."""
+        ledger = Ledger()
+        for _ in range(5):
+            bad_act = make_action(declared_by="org:attacker", jurisdiction="US-NY", exceptions_used=0)
+            bad_dec = self.run_eval(bad_act, ledger=ledger)
+            self.assertEqual(bad_dec.verdict, lokahi.FORBIDDEN)
+            ledger.append(bad_dec, bad_act, self.manifest, ts=NOW - 600)
+        # Valid emergency declaration still succeeds into ESCALATE because FORBIDDEN spam did not consume slots
+        valid_emerg = self.run_eval(make_action(declared_by="org:mayor", exceptions_used=0), ledger=ledger)
+        self.assertEqual(valid_emerg.verdict, lokahi.ESCALATE)
+        self.assertEqual(valid_emerg.reasons, ["insufficient_disjoint_consent"])
+
     def test_emergency_within_cap_still_requires_disjoint_quorum(self):
         d = self.run_eval(make_action(declared_by="org:mayor", exceptions_used=1))
         self.assertEqual(d.verdict, lokahi.ESCALATE)
@@ -207,6 +233,17 @@ class TestEvaluation(unittest.TestCase):
         self.assertEqual(d.verdict, lokahi.FORBIDDEN)
         self.assertEqual(d.reasons, ["requester_operator_in_ring"])
 
+    def test_requester_cannot_mask_two_independent_no_votes(self):
+        """Verify D-02 fix: two non-conflicted 'no' votes trigger suspended_by_ring even if requester injects a vote."""
+        consents = [
+            Consent("org:water-ops", "node-x", decision="yes"),
+            Consent("dave", "node-d", decision="no"),
+            Consent("eve", "node-e", decision="no"),
+        ]
+        d = self.run_eval(make_action(reversible=False), consents)
+        self.assertEqual(d.verdict, lokahi.FORBIDDEN)
+        self.assertEqual(d.reasons, ["suspended_by_ring"])
+
     def test_declaring_party_cannot_vote(self):
         consents = [
             Consent("alice", "node-a", decision="yes"),
@@ -260,6 +297,74 @@ class TestEvaluation(unittest.TestCase):
         self.assertEqual(d.verdict, lokahi.FORBIDDEN)
         self.assertEqual(d.reasons, ["non_response"])
 
+    def test_kinetic_ahimsa_physical_envelope_interlock(self):
+        phys_m = make_manifest(
+            self.signer,
+            physical_envelope={
+                "max_contact_force_n": 6.1,
+                "max_joint_torque_nm": 45.0,
+                "workspace_bounds_m": [0.0, 2.0, -1.0, 1.0, 0.2, 2.4],
+            },
+        )
+        ok_act = make_action(physical_params={"contact_force_n": 5.0, "joint_torque_nm": 20.0, "waypoint_m": [1.0, 0.0, 1.0]})
+        d_ok = evaluate(phys_m, ok_act, signer=self.signer, now=NOW)
+        self.assertTrue(d_ok.allowed)
+
+        over_force = make_action(physical_params={"contact_force_n": 18.0, "joint_torque_nm": 20.0, "waypoint_m": [1.0, 0.0, 1.0]})
+        d_over = evaluate(phys_m, over_force, signer=self.signer, now=NOW)
+        self.assertEqual(d_over.verdict, lokahi.FORBIDDEN)
+        self.assertEqual(d_over.actuator_interlock, "safe_mechanical_hold")
+
+
+class TestGhostproof(unittest.TestCase):
+    def test_three_axis_router_fast_path_and_escalation(self):
+        routine = DelegationTask("T1", "Infra", reversibility=1.0, empirical_human_lift=-0.01, normative_legitimacy=0)
+        d1 = route_delegation(routine)
+        self.assertEqual(d1.route, ghostproof.AUTONOMOUS_FAST_PATH)
+        self.assertFalse(d1.interrupts_human)
+
+        high_stakes = DelegationTask(
+            "T2",
+            "Clinical",
+            reversibility=0.0,
+            empirical_human_lift=0.12,
+            normative_legitimacy=1,
+            token_distributions=[[0.42, 0.39, 0.19]],
+        )
+        d2 = route_delegation(high_stakes)
+        self.assertEqual(d2.route, ghostproof.SEAM_EXPOSED_DELIBERATION)
+        self.assertTrue(d2.hesitation.flagged)
+        self.assertTrue(d2.hesitation.requires_tradeoff_endorsement)
+
+    def test_hesitation_seam_entropy_and_margin(self):
+        seam = audit_hesitation_seams([[0.45, 0.43, 0.12]])
+        self.assertTrue(seam.flagged)
+        self.assertLess(seam.min_top2_margin, 0.15)
+
+    def test_somatic_sparring_node_and_brier_calibration(self):
+        sparring = DelegationTask(
+            "T3",
+            "Research",
+            reversibility=1.0,
+            empirical_human_lift=-0.02,
+            normative_legitimacy=0,
+            is_sparring_node=True,
+            crux_pod_size=3,
+        )
+        d_spar = route_delegation(sparring)
+        self.assertEqual(d_spar.route, ghostproof.DEVELOPMENTAL_SPARRING_NODE)
+        self.assertTrue(d_spar.requires_blind_precommitment)
+        self.assertEqual(d_spar.crux_pod_size, 3)
+
+        judgments = [
+            ghostproof.PreRegisteredJudgment("T2", ["alice", "bob", "carol"], "Branch B", "Hypothesis 1", 0.85, 1),
+            ghostproof.PreRegisteredJudgment("T3", ["alice", "bob", "carol"], "Branch A", "Hypothesis 2", 0.20, 0),
+        ]
+        cal = ghostproof.evaluate_brier_calibration(judgments)
+        self.assertEqual(cal["count"], 2)
+        self.assertTrue(cal["well_calibrated"])
+        self.assertLess(cal["brier_score"], 0.05)
+
 
 class TestLedger(unittest.TestCase):
     def setUp(self):
@@ -284,7 +389,6 @@ class TestLedger(unittest.TestCase):
         ledger.entries[1]["verdict"] = "compliant"
         self.assertEqual(ledger.verify(), (False, 1))
 
-        # Reordering test
         ledger2 = Ledger()
         for f in (["usage_liters"], ["protest_history"]):
             a = make_action(features=f)
