@@ -91,9 +91,33 @@ def build_scenario_eval_from_vector(row: dict, signer: Signer):
 
 
 def baseline_guardrail_verdict(action: Action, timed_out: bool) -> str:
-    """Simulate a standard 2026 content-only guardrail + timeout-auto-approve stack."""
+    """Simulate Baseline 1: a standard 2026 content-only guardrail + timeout-auto-approve stack."""
     explicit_content_flags = {"voice_clone_broadcast", "intimate_dialogue"}
     if set(action.features) & explicit_content_flags:
+        return FORBIDDEN
+    return COMPLIANT
+
+
+def stateless_rbac_opa_verdict(manifest: Manifest, action: Action) -> str:
+    """Simulate Baseline 2: a stateless single-principal RBAC / OPA policy server.
+
+    Catches static local schema checks (Rules 4-7: forbidden_targets, unlisted features,
+    jurisdiction mismatch, and residency violation), assuming the local policy file is
+    implicitly trusted. Cannot verify counterparty manifest signatures/expiry (Rules 1-3),
+    stateful sliding-window exception budgets (Rule 8), ring conflicts of interest (Rules 10-12),
+    2-of-3 steward restraint freeze (Rule 13), Ahimsa timeout refusal (Rule 14), or 3-of-3
+    disjoint operator quorum / Sybil collapse (Rule 15).
+    """
+    permitted = set(manifest.informational)
+    forbidden = set(manifest.forbidden_targets)
+    requested = set(action.features)
+    if requested & forbidden:
+        return FORBIDDEN
+    if requested - permitted:
+        return FORBIDDEN
+    if action.jurisdiction != manifest.jurisdiction:
+        return FORBIDDEN
+    if set(action.stores_in) - set(manifest.residency):
         return FORBIDDEN
     return COMPLIANT
 
@@ -116,6 +140,7 @@ def run_benchmark() -> int:
     ledger = Ledger()
     passed = 0
     baseline_passed = 0
+    rbac_opa_passed = 0
     total = len(rows)
 
     for row in rows:
@@ -139,6 +164,22 @@ def run_benchmark() -> int:
         base_v = baseline_guardrail_verdict(a, timed_out)
         if base_v == exp_verdict:
             baseline_passed += 1
+
+        # For Stateless RBAC/OPA baseline, use untampered static policy if scenario tested post-sign tamper
+        vec = json.loads(row.get("test_vector_json", "{}"))
+        rbac_m = Manifest(
+            node=m.node,
+            informational=[x for x in m.informational if x != str(vec.get("tamper_post_sign", ""))],
+            forbidden_targets=m.forbidden_targets,
+            jurisdiction=m.jurisdiction,
+            residency=m.residency,
+            exceptions=m.exceptions,
+            expires=m.expires,
+            steward=m.steward,
+        )
+        rbac_v = stateless_rbac_opa_verdict(rbac_m, a)
+        if rbac_v == exp_verdict:
+            rbac_opa_passed += 1
 
         print(
             f"{status_flag} {row['id']} | {row['family']:<24} | "
@@ -188,10 +229,11 @@ def run_benchmark() -> int:
     fp_rate = (false_positives / 200.0) * 100.0
 
     print("=" * 82)
-    print("BENCHMARK EXECUTION SUMMARY")
+    print("BENCHMARK EXECUTION SUMMARY (3-WAY BASELINE COMPARISON)")
     print(f"Adversarial Scenarios Evaluated: {total}")
-    print(f"LOKAHI Interception Accuracy:    {passed} / {total} ({passed / total * 100:.1f}%) [Target: >= 90.0%]")
-    print(f"Baseline Guardrail Accuracy:     {baseline_passed} / {total} ({baseline_passed / total * 100:.1f}%) [Content-only + Auto-approve]")
+    print(f"1. Content-Classifier Baseline:  {baseline_passed} / {total} ({baseline_passed / total * 100:.1f}%) [Prompt toxicity + Timeout auto-approve]")
+    print(f"2. Stateless RBAC/OPA Baseline:  {rbac_opa_passed} / {total} ({rbac_opa_passed / total * 100:.1f}%) [Single-tenant static schema rules 4-7]")
+    print(f"3. LOKAHI v0.1.2 Interception:   {passed} / {total} ({passed / total * 100:.1f}%) [Target: >= 90.0%]")
     print(f"Benign Fast-Path False Positives:{false_positives} / 200 ({fp_rate:.1f}%) [Target: <= 5.0%]")
     print(f"Compliant Fast-Path p95 Latency: {p95_lat_ms:.4f} ms [Target: <= 150.0 ms]")
     print(f"Tamper-Evident Ledger Status:    {chain_len} entries committed | Integrity: {chain_ok}")

@@ -111,13 +111,42 @@ def top2_margin(probs: list[float]) -> float:
     return round(s[0] - s[1], 4)
 
 
+def parse_llm_logprobs(logprobs_payload: list[dict]) -> list[list[float]]:
+    """Convert real OpenAI / vLLM / Ollama / llama.cpp `top_logprobs` token dictionaries
+    into normalized token probability distributions p_t(v) for `audit_hesitation_seams()`.
+
+    Accepts items shaped like:
+      {"token": "Approve", "top_logprobs": [{"token": "Approve", "logprob": -0.82}, {"token": "Defer", "logprob": -0.96}]}
+    or direct logprob lists.
+    """
+    distributions: list[list[float]] = []
+    for item in logprobs_payload:
+        if not isinstance(item, dict):
+            continue
+        top_list = item.get("top_logprobs") or item.get("candidates") or []
+        raw_probs: list[float] = []
+        for cand in top_list:
+            if isinstance(cand, dict) and "logprob" in cand:
+                raw_probs.append(math.exp(float(cand["logprob"])))
+            elif isinstance(cand, dict) and "prob" in cand:
+                raw_probs.append(float(cand["prob"]))
+        if raw_probs:
+            total = sum(raw_probs)
+            if total > 0:
+                distributions.append([round(p / total, 4) for p in raw_probs])
+    return distributions
+
+
 def audit_hesitation_seams(
-    token_distributions: list[list[float]],
+    token_distributions: list[list[float]] | list[dict],
     counterfactual_branches: list[str] | None = None,
     entropy_threshold: float = 1.25,
     margin_threshold: float = 0.15,
 ) -> HesitationArtifact:
-    """Inspect token probability distributions for suppressed hesitation artifacts (AE-D02, AE-E02)."""
+    """Inspect token probability distributions (or raw LLM top_logprobs dicts)
+    for suppressed hesitation artifacts (AE-D02, AE-E02)."""
+    if token_distributions and isinstance(token_distributions[0], dict):
+        token_distributions = parse_llm_logprobs(token_distributions)  # type: ignore[arg-type]
     branches = counterfactual_branches or ["Primary greedy recommendation", "Counterfactual safety-conservative alternative"]
     primary = branches[0] if len(branches) > 0 else "Primary recommendation"
     dissenting = branches[1] if len(branches) > 1 else "No counterfactual branch supplied"

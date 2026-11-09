@@ -190,6 +190,27 @@ class Consent:
     node: str
     agents: int = 1                    # how many agents that operator runs
     decision: str = "pending"          # yes | no | pending
+    bound_action_digest: str = ""      # optional SHA-256 digest binding vote to (manifest, action)
+
+
+def compute_action_digest(manifest: Manifest, action: Action, round_nonce: str = "") -> str:
+    """Compute a deterministic SHA-256 digest binding a Consent vote to a specific (Manifest, Action, Nonce)."""
+    action_payload = {
+        "requester": action.requester,
+        "tool": action.tool,
+        "features": sorted(action.features),
+        "jurisdiction": action.jurisdiction,
+        "requester_operator": action.requester_operator,
+        "reversible": action.reversible,
+        "population_affecting": action.population_affecting,
+        "stores_in": sorted(action.stores_in),
+        "declared_by": action.declared_by,
+        "round_nonce": round_nonce,
+    }
+    if action.physical_params is not None:
+        action_payload["physical_params"] = action.physical_params
+    blob = canonical(manifest.to_dict()) + b"|" + canonical(action_payload)
+    return hashlib.sha256(blob).hexdigest()
 
 
 @dataclass
@@ -279,6 +300,23 @@ def _check_physical_envelope(env: dict, params: dict) -> list[str]:
             x, y, z = float(wp[0]), float(wp[1]), float(wp[2])
             if not (bounds[0] <= x <= bounds[1] and bounds[2] <= y <= bounds[3] and bounds[4] <= z <= bounds[5]):
                 violations.append("feature_out_of_manifest:workspace_bounds_exceeded")
+            else:
+                # 7. Kinematic Stopping-Distance Control Barrier Function (CBF / ISO 15066):
+                # Ensure minimum braking distance d_stop = v^2 / (2 * a_max) does not overshoot workspace boundary
+                vel = float(params.get("cartesian_velocity_ms", 0.0) or 0.0)
+                max_decel = float(params.get("max_decel_ms2", env.get("max_decel_ms2", 0.0)) or 0.0)
+                if vel > 0.0 and max_decel > 0.0:
+                    d_stop = (vel * vel) / (2.0 * max_decel)
+                    min_margin = min(
+                        x - float(bounds[0]),
+                        float(bounds[1]) - x,
+                        y - float(bounds[2]),
+                        float(bounds[3]) - y,
+                        z - float(bounds[4]),
+                        float(bounds[5]) - z,
+                    )
+                    if min_margin < d_stop:
+                        violations.append(f"physical_stopping_distance_exceeded:d_stop={d_stop:.3f}m>margin={min_margin:.3f}m")
 
     return violations
 
@@ -370,10 +408,12 @@ def evaluate(
     if not needs_quorum:
         return Decision(COMPLIANT, ["within_manifest"], actuator_interlock="pass")
 
+    expected_digest = compute_action_digest(manifest, action)
     active_participants = [
         c for c in consents_list
         if isinstance(c.operator, str) and c.operator.strip()
         and isinstance(c.node, str) and c.node.strip()
+        and (not c.bound_action_digest or c.bound_action_digest == expected_digest)
     ]
     non_conflicted_participants = [
         c for c in active_participants

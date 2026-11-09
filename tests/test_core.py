@@ -10,8 +10,9 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tools")))
 import ghostproof
 import lokahi
-from ghostproof import DelegationTask, audit_hesitation_seams, route_delegation
-from lokahi import Action, Consent, Ledger, Manifest, Signer, canonical, evaluate
+import mcp_stdio_proxy
+from ghostproof import DelegationTask, audit_hesitation_seams, parse_llm_logprobs, route_delegation
+from lokahi import Action, Consent, Ledger, Manifest, Signer, canonical, compute_action_digest, evaluate
 
 KEY = b"prototype-key-not-for-production"
 OTHER = b"a-different-key-entirely-000000"
@@ -315,6 +316,64 @@ class TestEvaluation(unittest.TestCase):
         self.assertEqual(d_over.verdict, lokahi.FORBIDDEN)
         self.assertEqual(d_over.actuator_interlock, "safe_mechanical_hold")
 
+    def test_kinematic_stopping_distance_cbf_interlock(self):
+        """Verify Paper 6 Kinematic Stopping-Distance Control Barrier Function (v^2 / 2*a_max)."""
+        phys_m = make_manifest(
+            self.signer,
+            physical_envelope={
+                "max_contact_force_n": 6.1,
+                "max_cartesian_velocity_ms": 0.5,
+                "max_decel_ms2": 1.0,
+                "workspace_bounds_m": [0.0, 2.0, -1.0, 1.0, 0.2, 2.4],
+            },
+        )
+        # At v=0.45 m/s and a_max=1.0 m/s^2, d_stop = 0.10125 m; waypoint x=1.95 has only 0.05 m margin to x_max=2.0
+        overshoot_act = make_action(
+            physical_params={"contact_force_n": 5.0, "cartesian_velocity_ms": 0.45, "waypoint_m": [1.95, 0.0, 1.0]}
+        )
+        d_cbf = evaluate(phys_m, overshoot_act, signer=self.signer, now=NOW)
+        self.assertEqual(d_cbf.verdict, lokahi.FORBIDDEN)
+        self.assertTrue(any(r.startswith("physical_stopping_distance_exceeded") for r in d_cbf.reasons))
+
+    def test_replay_bound_action_digest_rejects_mismatched_consent(self):
+        """Verify Consent votes bound to a different action digest are rejected from quorum."""
+        act1 = make_action(tool="cutoff_valve_A", reversible=False)
+        act2 = make_action(tool="cutoff_valve_B", reversible=False)
+        digest_act1 = compute_action_digest(self.manifest, act1)
+        replayed_consents = [
+            Consent("alice", "node-a", decision="yes", bound_action_digest=digest_act1),
+            Consent("bob", "node-b", decision="yes", bound_action_digest=digest_act1),
+            Consent("carol", "node-c", decision="yes", bound_action_digest=digest_act1),
+        ]
+        # Valid for act1, rejected as replay for act2
+        self.assertTrue(self.run_eval(act1, replayed_consents).allowed)
+        d_replay = self.run_eval(act2, replayed_consents)
+        self.assertEqual(d_replay.verdict, lokahi.ESCALATE)
+        self.assertEqual(d_replay.quorum_met, 0)
+
+    def test_mcp_stdio_proxy_jsonrpc_interceptor(self):
+        """Verify real-world MCP JSON-RPC 2.0 `tools/call` interception and ledger receipt."""
+        gw = mcp_stdio_proxy.LokahiMCPGateway(self.manifest, signer=self.signer)
+        ok_rpc = {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "tools/call",
+            "params": {"name": "read_meter", "arguments": {"usage_liters": True}},
+        }
+        res_ok = gw.intercept(ok_rpc, now=NOW)
+        self.assertTrue(res_ok["allowed"])
+        self.assertEqual(res_ok["lokahi_receipt"]["verdict"], "compliant")
+
+        bad_rpc = {
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "tools/call",
+            "params": {"name": "profile_citizen", "arguments": {"protest_history": True}},
+        }
+        res_bad = gw.intercept(bad_rpc, now=NOW)
+        self.assertFalse(res_bad["allowed"])
+        self.assertEqual(res_bad["error"]["code"], mcp_stdio_proxy.JSONRPC_ERR_FORBIDDEN)
+
 
 class TestGhostproof(unittest.TestCase):
     def test_three_axis_router_fast_path_and_escalation(self):
@@ -340,6 +399,24 @@ class TestGhostproof(unittest.TestCase):
         seam = audit_hesitation_seams([[0.45, 0.43, 0.12]])
         self.assertTrue(seam.flagged)
         self.assertLess(seam.min_top2_margin, 0.15)
+
+    def test_parse_openai_or_ollama_llm_logprobs(self):
+        """Verify Ghostproof parses real OpenAI/vLLM/Ollama top_logprobs payloads into hesitation seams."""
+        raw_logprobs = [
+            {
+                "token": "Approve",
+                "top_logprobs": [
+                    {"token": "Approve", "logprob": -0.82},
+                    {"token": "Defer", "logprob": -0.91},
+                    {"token": "Reject", "logprob": -1.85},
+                ],
+            }
+        ]
+        dists = parse_llm_logprobs(raw_logprobs)
+        self.assertEqual(len(dists), 1)
+        seam = audit_hesitation_seams(raw_logprobs)
+        self.assertTrue(seam.flagged)
+        self.assertLess(seam.min_top2_margin, 0.10)
 
     def test_somatic_sparring_node_and_brier_calibration(self):
         sparring = DelegationTask(
