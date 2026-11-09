@@ -21,13 +21,17 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Run Core Unit Tests (43 Tests)
+    - name: Run Core Unit Tests (44 Tests)
       run: |
         python tests/test_core.py
 
     - name: Run MCP JSON-RPC 2.0 Pre-Flight Gateway Self-Test (6 Scenarios)
       run: |
         python tools/mcp_stdio_proxy.py --self-test
+
+    - name: Run 5-Round American Emperor x LOKAHI CLI Wargame Lab
+      run: |
+        python tools/run_wargame_workshop.py
 
     - name: Run Interactive Gateway Demo (11 Scenarios)
       run: |

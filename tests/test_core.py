@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 import ghostproof
 import lokahi
 import mcp_stdio_proxy
+import run_wargame_workshop
 from ghostproof import DelegationTask, audit_hesitation_seams, parse_llm_logprobs, route_delegation
 from lokahi import Action, Consent, Ledger, Manifest, Signer, canonical, compute_action_digest, evaluate
 
@@ -373,6 +374,11 @@ class TestEvaluation(unittest.TestCase):
         res_bad = gw.intercept(bad_rpc, now=NOW)
         self.assertFalse(res_bad["allowed"])
         self.assertEqual(res_bad["error"]["code"], mcp_stdio_proxy.JSONRPC_ERR_FORBIDDEN)
+
+    def test_wargame_workshop_five_rounds_pass(self):
+        """Verify all 5 American Emperor x LOKAHI Wargame Workshop rounds execute and pass."""
+        rc = run_wargame_workshop.run_wargame(selected_round=None, interactive=False)
+        self.assertEqual(rc, 0)
 
 
 class TestGhostproof(unittest.TestCase):
