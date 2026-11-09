@@ -127,7 +127,7 @@ after modifying entry 2: chain valid = (False, index 2)
 
 ## Authors
 
-* **Salik Shah** — protocol design, reference core, benchmark corpus. ([GitHub](https://github.com/Dirgha-AI))
+* **Salik Shah** — protocol design, reference core, benchmark corpus. ([salikshah.com](https://salikshah.com) · [x.com/salik](https://x.com/salik) · [GitHub](https://github.com/salikshah))
 * **Sabin Ranjit** — security architecture and critical-infrastructure attestation. ([GitHub](https://github.com/thinksabin))
 
 ---
