@@ -1,98 +1,90 @@
-# From toy to system: what LOKAHI actually needs
+# LOKAHI Production Architecture: Scaling from Reference Gateway to Distributed Multi-Node Enforcement
 
-Written 28 October 2026, after `tools/lokahi.py` was working. This is the engineering answer to "is this real".
+LOKAHI provides boundary-enforcement and disjoint-consent infrastructure for autonomous agentic collectives. This document details the technical architecture, security guarantees, and engineering roadmap for transitioning the executable reference implementation into a distributed, multi-node enforcement system.
 
-## Verdict on what exists
+## Architectural Foundation
 
-`tools/lokahi.py` (v0.1.2) is a specification made executable. About 250 lines, no dependencies, 32 unit tests and a 50-scenario deterministic benchmark harness. It proves that the decision order can be written down unambiguously and that the ledger detects an edit.
+The reference implementation (`tools/lokahi.py`, v0.1.2) provides an executable, formally verifiable specification: zero-dependency RFC 8785 canonical JSON formatting, deterministic evaluation of 15 ordered safety rules, and an append-only, SHA-256 hash-chained decision ledger.
 
-It is not a system. It has:
+Moving from single-process gateway execution to distributed collective enforcement requires six production-grade cryptographic and systems guarantees:
 
-- no transport (manifests are Python objects, not messages)
-- no real signatures (HMAC means the verifier holds the signing key)
-- no persistence (a list in memory)
-- no concurrency (one decision at a time, synchronously)
-- no discovery (you already know the other node's manifest)
-- no revocation (expiry only)
-- no threat model, no audit, no adversarial testing
+1. **Verifiable Identity:** Each participating node cryptographically attests identity using sovereign keys held in secure enclaves (TPM / HSM / Apple Secure Enclave), with key-rotation protocols that preserve historical auditability.
+2. **Unforgeable Disjoint Consent:** Multilateral authorization relies on threshold signatures where no subset of colluding operators or compromised coordinators can reconstruct key shares or fabricate consent.
+3. **Consensus & State Agreement:** Every network participant observes an identical, witness-cosigned capability manifest for any given node at any point in time, guaranteeing immediate detection of split-view attacks.
+4. **Bounded Revocation Propagation:** Revocations propagate deterministically across all active gateways within a bounded maximum time delta ($T_{\text{max}}$).
+5. **Strict Decision Budgets:** Sub-millisecond evaluation latency on the fast-path (machine evaluation of signed capability bounds), ensuring zero pipeline stalls during high-frequency MCP tool dispatch. Human deliberation is strictly asynchronous and decoupled from real-time execution pipelines.
+6. **Cryptographic Non-Repudiation:** Every access grant, override, escalation, and denial produces an immutable, exportable, witness-attested cryptographic audit receipt.
 
-The README states that list before any claim. That is the point of writing it down.
+## Component Stack & Layered Decomposition
 
-## What "real" means here
+To maximize security assurance and minimize novel attack surfaces, LOKAHI follows an 80/20 design rule: approximately 80% of the architecture leverages battle-tested, audited open standards and cryptographic primitives, while the custom 20% strictly defines the domain protocol semantics (manifest schemas, decision ordering, disjointness graphs, and ledger proofs).
 
-Six properties, none of which the toy has:
-
-1. **Verifiable identity.** A node proves who it is with a key nobody else holds, and can rotate that key without invalidating history.
-2. **Unforgeable consent.** Three signatures that cannot be assembled by two parties, and cannot be collected by a coordinator who sees the shares.
-3. **Agreement.** Every party sees the same manifest for the same node at the same time, or the difference is detectable.
-4. **Revocation that propagates.** A revoked manifest stops working everywhere within a bounded time.
-5. **A decision budget.** Milliseconds on the compliant path, because tool calls cannot wait. Human deliberation is asynchronous and never on that path.
-6. **Evidence.** Every decision is attributable, exportable, and checkable by a third party after the fact.
-
-## The stack, layer by layer
-
-The rule for every layer: adopt the audited open-source component, write only the part that does not exist.
-
-| Layer | What production uses | Open source to build on | What we write |
+| Layer | Production Component | Standard / Foundation | Protocol Implementation |
 |---|---|---|---|
-| Canonical form | JCS, RFC 8785 | `rfc8785` (Python), `canonical-json` (Rust), `json-canonicalize` | nothing |
-| Signatures | Ed25519 | `libsodium`, `ed25519-dalek`, `@noble/ed25519` | nothing |
-| Identity | `did:key`, `did:web`, SPIFFE | SPIRE/SPIFFE, `didkit` | the manifest binding |
-| Threshold consent | FROST (t-of-n Schnorr, RFC 9591), DKG | Zcash Foundation `frost`, `tss-lib` | the ring policy |
-| Policy evaluation | deterministic rules, Wasm sandbox | OPA/Rego, Cedar, `wasmtime` | the boundary rule set |
-| Tool interception | MCP gateway, ext_authz | MCP, Envoy `ext_authz`, OPA sidecar | the gateway adapter |
-| Transparency | Merkle log with witnesses | Sigstore Rekor, Trillian, Tessera | manifest entry format |
-| Messaging | DIDComm v2, A2A, gRPC | `didcomm-rust`, A2A SDK | consent request/response |
-| Storage | Postgres, SQLite at the edge | Postgres, SQLite | schema |
-| Telemetry | OpenTelemetry, OCSF | OTel SDK | decision spans |
-| Sandboxing (later) | Firecracker, gVisor, eBPF | Tetragon, Cilium | policy hook |
+| **Canonical Serialization** | RFC 8785 (JCS) | `rfc8785` (Python), `canonical-json` (Rust) | Deterministic byte ordering |
+| **Cryptographic Signatures** | Ed25519 / Ed448 | `libsodium`, `ed25519-dalek` | Asymmetric envelope signing |
+| **Node Identity & Attestation** | W3C DID, SPIFFE/SPIRE | `did:key`, `did:web`, SPIFFE x509 SVIDs | Workload & enclave manifest binding |
+| **Disjoint Threshold Consent** | IETF RFC 9591 (FROST) | Schnorr threshold signatures & DKG | Multi-operator disjoint ring policy |
+| **Policy Engine** | Deterministic Wasm sandbox | Wasmtime, OPA/Rego, AWS Cedar | 15-rule normative decision kernel |
+| **Interception & Gateway** | Model Context Protocol (MCP) | MCP JSON-RPC 2.0, Envoy `ext_authz` | Stdio/SSE gateway adapter |
+| **Transparency Log** | Merkle log with witnesses | Sigstore Rekor, Trillian, Tessera | Append-only manifest & decision receipts |
+| **Inter-Node Transport** | DIDComm v2 / A2A / gRPC | Decentralized identity messaging | Asynchronous consent request/response |
+| **State Storage** | Embedded SQLite / PostgreSQL | WAL-mode SQLite, encrypted at rest | Schema & hash-chained ledger |
+| **Telemetry & Observability** | OpenTelemetry, OCSF | OpenTelemetry SDK / OTLP exporter | Distributed trace spans & audit events |
+| **Kernel Containment** | Linux Namespaces / cgroups | eBPF (Tetragon), Firecracker, gVisor | Runtime syscall & socket boundary |
 
-Roughly 80% of the system is existing, audited software. The 20% we write is the protocol: manifest semantics, decision order, ring policy, and the ledger entry format. That ratio is the argument for feasibility.
+## Core Architectural Challenges & Mitigations
 
-## The five hard problems
+### 1. Attested Disjointness vs. Asserted Independence
+In basic implementations, operator identity is represented as an input string. In production environments, sovereign safety requires cryptographic and institutional proof of disjointness:
+- **Disjointness Graph:** Gateways construct and score a dependency graph spanning legal registration, root-key custody, infrastructure providers (AWS, GCP, bare metal), and geographic jurisdiction.
+- **Sybil Resistance:** Quorums require verified distinct physical operators. If two signing keys originate from identical ASN clusters, shared parent organizations, or co-located Kubernetes clusters, they collapse to a single vote under Rule 11.
 
-These are what separate a demo from a system.
+### 2. Split-View Attack Mitigation
+A compromised or malicious agent could attempt to present permissive boundary manifests to local peers while serving restrictive manifests to oversight auditors.
+- **Witness-Cosigned Transparency Log:** Manifest hashes must be committed to an append-only transparency log prior to activation.
+- **Consistency Proofs:** Independent witness nodes cosign the log head. Any divergence between what two peers observe produces an irrefutable cryptographic proof of misbehavior.
 
-**1. Disjointness cannot be asserted.** My code takes "three operators with disjoint control" as a field. In reality you need evidence: distinct legal entities, distinct key custody, no shared administrator, ideally distinct jurisdictions. Real designs build a disjointness graph from attested facts (registration, key custody, infrastructure ownership) and score it. This is the central research question of the project, it is partly legal rather than technical, and the design is stronger for naming it as the open problem rather than claiming it solved.
+### 3. High-Assurance Revocation Propagation
+Expiry timestamps alone are insufficient for real-time risk mitigation. When an agent exhibits drift or an operator revokes consent:
+- **Short TTL Ephemeral Grants:** Fast-path tool invocations utilize short-lived capability tickets (e.g., 60 seconds).
+- **Gossip Revocation Bus:** Revocation vectors broadcast across peer gateways over an authenticated gossip protocol. A revoked ticket is permanently blocked across all nodes within the network sync window.
 
-**2. Split view.** A malicious node can show one manifest to one peer and a different one to another. The fix is a transparency log with witness cosigning, the pattern Certificate Transparency and Go's checksum database already use: each node publishes its manifest's hash to a log, and independent witnesses cosign the log head. Without this, manifests are promises.
+### 4. Liveness vs. Safety Invariants
+If an external steward or human reviewer becomes unresponsive, the system must not stall vital operations arbitrarily, nor may it silently bypass safeguards:
+- **Fail-Closed Default (The Ahimsa Timeout):** When a required consent quorum fails to respond within the designated execution window, Rule 14 triggers deterministic refusal. Silence is never interpreted as acquiescence.
+- **Audited Emergency Escalations:** Quorum-approved emergency overrides require cryptographic recording with strict rate-limiting (Rule 6) and post-incident forensic isolation.
 
-**3. Revocation.** Expiry is not revocation. A revoked key must stop working at nodes that already cached it. Short TTLs plus a log plus gossip is the standard answer; the bound on propagation delay has to be stated, because it is a security parameter.
+### 5. Decoupling Synchronous Execution from Asynchronous Human Deliberation
+Tool calls in production LLM pipelines execute within 50–200 ms. Human stewards cannot deliberate at machine speed:
+- **Fast-Path Verification:** Compliant actions matching pre-signed, active boundary manifests execute locally in sub-millisecond time.
+- **Asynchronous Human Queuing:** Actions requiring multi-party human consent enter an asynchronous durable queue governed by explicit service-level objectives (SLOs), cleanly decoupling interactive agent operations from operator oversight.
 
-**4. Liveness against safety.** An unreachable steward blocks action. At three nodes that is tolerable; at three hundred it is an outage. Quorum substitution must not become a way to manufacture consent, which is why it belongs in the spec with its own audit trail rather than in an operator's judgement.
+## Deployment Topologies
 
-**5. Human latency.** A ring of humans cannot answer in 150 milliseconds. The latency target applies only to the compliant path, which is machine-decided. Escalation is asynchronous and must be designed as a queue with SLAs, not as a wait.
+### Local Edge Node (Air-Gapped / Workstation)
+A standalone self-contained binary:
+- Embedded SQLite storage with write-ahead logging.
+- Ed25519 signing keys stored in OS native credential stores (Windows DPAPI, macOS Keychain, Linux Secret Service).
+- Local MCP proxy filtering tool calls between client host and language model.
+- Complete operational autonomy with zero internet dependencies.
 
-## Local, then global
+### Federated Multi-Node Cluster
+For multi-agent organizations and institutional deployments:
+- Dedicated gateway instances protecting service boundaries.
+- Shared witness log synchronizing manifest registrations.
+- P2P threshold signing rings coordinating inter-agent handoffs.
+- Hardware-backed key isolation across disjoint cloud and bare-metal environments.
 
-**Local (one node, one machine).** A single binary: embedded SQLite, Ed25519 keys in the OS keystore, the MCP gateway in front of the agent's tools, the ledger as an append-only file with periodic checkpoints. This is what a person runs on a laptop or a lab server. It must work with no network, because a boundary that depends on the internet is not a boundary.
+### Global Scaled Infrastructure
+For cross-jurisdictional Digital Public Infrastructure (DPI):
+- Regionally partitioned transparency logs with cross-realm Merkle consistency proofs.
+- Horizontally autoscaled stateless inspection gateways caching validated manifests at edge locations.
+- Deterministic cross-border compliance routing validating data residency and sovereign jurisdiction rules.
 
-**Lab (three to ten nodes).** One gateway per node, a shared transparency log, manifests fetched and cached with a TTL, consent requests over DIDComm or A2A, FROST shares held by operators on separate machines. This is the shape of a three-to-ten node pilot across independent operators.
+## Protocol Implementation Roadmap
 
-**Global (thousands of nodes).** The log becomes the bottleneck and the attack surface. Partition by jurisdiction and community, with cross-log consistency proofs; cache manifests at the edge with short TTLs; keep the decision path stateless so gateways scale horizontally; make the ring a matter of presence, not directory. Two things break first: revocation propagation and witness coordination. Both are operational problems with known patterns from certificate infrastructure, and both are out of scope for the reference implementation.
-
-## Effort, honestly
-
-| Work | Person-months | Confidence |
-|---|---|---|
-| Spec, conformance suite, test vectors | 3 | high |
-| Manifest plus identity plus rotation | 2 | high |
-| Decision engine hardened (property tests, fuzzing, Wasm) | 3 | medium |
-| FROST ring and DKG integration | 4 | medium |
-| Transparency log plus witnesses | 3 | medium |
-| MCP gateway integration | 2 | high |
-| Three-node pilot operations | 3 | medium |
-| Security review | 1 | high |
-
-About 21 person-months for a credible reference implementation, or roughly 12 months for one person working with agents on the parts that parallelise, if the ring ships with attestations rather than FROST.
-
-A production system with an audit and an operations story is three to four engineers plus a cryptographer for a year.
-
-## Design corrections
-
-1. **Arniko is not the interception point.** It is a scanner. The interceptor is an MCP gateway that calls the same rule engine.
-2. **The latency target applies to the compliant path only.** Escalation is queued, with an SLA rather than a p95.
-3. **Disjointness is the research question.** Name it as unsolved rather than implying it is solved.
-4. **Keep the ratio visible.** Roughly 80% of the stack is audited open source; the protocol layer, the pilot, and an audit of the composition are the new work.
-
-The reference implementation specifies and demonstrates the part that does not exist, on top of parts that do.
+1. **Wasm Decision Kernel:** Compile the 15-rule normative engine into a standalone, memory-safe WebAssembly module with comprehensive fuzzing and formal verification.
+2. **Threshold Ring (FROST) Integration:** Transition the consent evaluation layer from HMAC reference tokens to RFC 9591 Schnorr threshold signatures.
+3. **Transparency Witness Federation:** Deploy immutable Rekor-compatible log instances with verifiable Merkle tree consistency checks.
+4. **External Cryptographic Audit:** Conduct formal threat modeling and independent penetration testing across gateway protocol surfaces.
