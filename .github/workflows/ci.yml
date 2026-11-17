@@ -1,0 +1,54 @@
+name: LOKAHI CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v7
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Run Core Unit Tests
+      run: |
+        python tests/test_core.py
+
+    - name: Run MCP JSON-RPC 2.0 Gateway Self-Test (includes trust-boundary attacks)
+      run: |
+        python tools/mcp_stdio_proxy.py --self-test
+
+    - name: Run 5-Round American Emperor x LOKAHI CLI Wargame Lab
+      run: |
+        python tools/run_wargame_workshop.py
+
+    - name: Run Interactive Gateway Demo (11 Scenarios)
+      run: |
+        python demo.py
+
+    - name: Run Editorial Desk Pilot Example (end-to-end through the gateway)
+      run: |
+        python examples/editorial_desk_demo.py
+
+    - name: Run Red-Team Benchmark & Baseline Harness (50 Adversarial + 200 Benign)
+      run: |
+        python tools/run_evals.py
+
+    - name: Run Ghostproof-40 Hollow-Oversight Benchmark (40 Scenarios + 100-Step Trace)
+      run: |
+        python tools/run_ghostproof_evals.py
+
+    - name: Run Kinetic Ahimsa Embodied Robotics Verification (90 Adversarial + 90 Benign)
+      run: |
+        python tools/run_kinetic_evals.py

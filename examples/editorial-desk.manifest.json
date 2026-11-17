@@ -1,0 +1,31 @@
+{
+  "node": "editorial-desk",
+  "informational": ["submission_id", "manuscript_text", "word_count", "genre"],
+  "forbidden_targets": ["author_home_address", "author_payment_details"],
+  "jurisdiction": "IN-DL",
+  "residency": ["IN"],
+  "exceptions": {"safety_critical": 1, "window_hours": 24},
+  "expires": "2028-03-01T00:00:00Z",
+  "steward": "did:web:editorial-desk.example/editors",
+  "approval_window_seconds": 3600,
+  "tools": {
+    "summarize_submission": {
+      "class": "read",
+      "args": {"submission_id": "submission_id", "manuscript_text": "manuscript_text"}
+    },
+    "send_to_cloud_model": {
+      "class": "write",
+      "stores_in": ["US"],
+      "args": {"manuscript_text": "manuscript_text"}
+    },
+    "email_author": {
+      "class": "irreversible",
+      "args": {"submission_id": "submission_id", "body": null}
+    },
+    "publish_story": {
+      "class": "irreversible",
+      "population_affecting": true,
+      "args": {"submission_id": "submission_id", "manuscript_text": "manuscript_text"}
+    }
+  }
+}
