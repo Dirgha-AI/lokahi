@@ -176,6 +176,7 @@ class Manifest:
     physical_envelope: dict | None = None  # Optional RFC 8785 physical robotics bounds
     tools: dict | None = None          # v0.1.3: per-tool policy table (see validate_tool_policy)
     approval_window_seconds: int | None = None  # v0.1.3: how long an approval round stays open
+    consent_threshold: dict | None = None  # v1.0: {"m": 2, "n": 3} per-manifest consent threshold
 
     REQUIRED = (
         "node",
@@ -207,6 +208,10 @@ class Manifest:
             d["tools"] = _normalize_tools(self.tools)
         if self.approval_window_seconds is not None:
             d["approval_window_seconds"] = int(self.approval_window_seconds)
+        # v1.0: consent_threshold is only present when set, so v0.1.x manifests
+        # keep exactly the same canonical bytes and their signatures still verify.
+        if self.consent_threshold is not None:
+            d["consent_threshold"] = dict(sorted(self.consent_threshold.items()))
         return d
 
     def sign(self, signer: Signer) -> "Manifest":
@@ -241,6 +246,9 @@ class Manifest:
             tools=dict(data["tools"]) if data.get("tools") is not None else None,
             approval_window_seconds=(
                 int(data["approval_window_seconds"]) if data.get("approval_window_seconds") is not None else None
+            ),
+            consent_threshold=(
+                dict(data["consent_threshold"]) if data.get("consent_threshold") is not None else None
             ),
         )
 
@@ -679,6 +687,36 @@ class Ledger:
             "quorum_required": decision.quorum_required,
             "quorum_met": decision.quorum_met,
             "declared_by": action.declared_by,
+            "prev": self._head(),
+        }
+        body["hash"] = hashlib.sha256(canonical(body)).hexdigest()
+        self.entries.append(body)
+        return body
+
+    def append_event(
+        self,
+        verdict: str,
+        reasons: Iterable[str],
+        node: str,
+        extra: dict | None = None,
+        ts: float | None = None,
+    ) -> dict:
+        """Append a non-tool event to the same hash chain.
+
+        Used for lifecycle events that are not a tool call: fail-secure
+        transitions, WebXR teleoperation actions and human re-arms. The entry
+        commits to the previous hash exactly as `append` does, so `verify()`
+        covers both kinds and a single chain remains the record of record.
+        """
+        timestamp = int(ts if ts is not None else time.time())
+        body = {
+            "seq": len(self.entries),
+            "ts": timestamp,
+            "node": node,
+            "kind": "event",
+            "verdict": verdict,
+            "reasons": list(reasons),
+            "extra": extra or {},
             "prev": self._head(),
         }
         body["hash"] = hashlib.sha256(canonical(body)).hexdigest()

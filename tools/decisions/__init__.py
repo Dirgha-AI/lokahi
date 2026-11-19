@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from .charter import ALLOW, ESCALATE, LABELS, REFUSE, SEVERITY, hard_rules, normalize
 from .model import DEFAULT_MODEL_PATH, JsonDecisionModel, featurize, load_model
+from .slm_judge import SLMJudge, SLMUnavailable
 from .tier import DecisionTier, combine, decide, system_decision
 
 __all__ = [
     "ALLOW", "ESCALATE", "REFUSE", "LABELS", "SEVERITY",
-    "DEFAULT_MODEL_PATH", "DecisionTier", "JsonDecisionModel",
+    "DEFAULT_MODEL_PATH", "DecisionTier", "JsonDecisionModel", "SLMJudge", "SLMUnavailable",
     "combine", "decide", "featurize", "hard_rules", "load_model", "normalize", "system_decision",
 ]

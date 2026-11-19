@@ -1,0 +1,23 @@
+[package]
+name = "lokahi-wasm-preflight"
+version = "1.0.0-dev"
+description = "LOKAHI Layer 1: deterministic pre-flight checks compiled to WebAssembly. Sub-millisecond regex allowlist, schema validation, rate limiting, and manifest integrity checks."
+edition = "2021"
+authors = ["Salik Shah <salik@dirgha.ai>", "Sabin Ranjit"]
+license = "Apache-2.0"
+repository = "https://github.com/Dirgha-AI/lokahi"
+
+[lib]
+name = "lokahi_wasm_preflight"
+crate-type = ["cdylib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
