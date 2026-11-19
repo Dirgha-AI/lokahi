@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Ghostproof v0.1.3 — Somatic Judgment Layer & Epistemic Uncertainty Framework.
+"""Ghostproof v0.1.4 — Somatic Judgment Layer & Epistemic Uncertainty Framework.
 
 Unites classical Indic epistemology (Satya as epistemic fidelity and Anekantavada
 as multi-sided deliberation) with cognitive neuroscience (Summerfield, 2022;
@@ -36,7 +36,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 AUTONOMOUS_FAST_PATH = "autonomous_fast_path"
 SEAM_EXPOSED_DELIBERATION = "seam_exposed_deliberation"

@@ -1,6 +1,6 @@
-# LOKAHI Boundary Manifest and Decision Semantics, v0.1.3
+# LOKAHI Boundary Manifest and Decision Semantics, v0.1.4
 
-Status: Specification draft for adversarial review. See `CHANGELOG.md` for what changed in v0.1.3.
+Status: Specification draft for adversarial review. See `CHANGELOG.md` for what changed in v0.1.4.
 
 ## 1. Manifest
 
@@ -87,7 +87,20 @@ The filter treats the agent's `tools/call` request as data, never as control.
 6. **The gateway's clock owns timeouts.** An irreversible or population-affecting call opens a window of `approval_window_seconds` (default 900) the first time it is seen. Retrying doesn't reset it. A call at or after the close, still short of quorum, is **forbidden** `non_response`.
 7. **Every decision is recorded,** denials included, in the hash-chained ledger.
 
-Not covered in v0.1.3: forwarding to the tool server, inspecting tool results or tool descriptions, emergency declarations through the filter, and persistence of open windows across restarts.
+Not covered in v0.1.4: forwarding to the tool server, inspecting tool results or tool descriptions, emergency declarations through the filter, and persistence of open windows across restarts.
+
+## 3b. Experimental Decisions Tier (v0.1.4, off by default)
+
+An optional learned layer after the filter. It is inactive unless the caller passes `experimental_decisions=True` (or a `decisions.DecisionTier`) to `LokahiMCPGateway`, or `--decisions experimental` to the CLI. With it off, every decision, receipt and ledger entry is the same as without it.
+
+1. **LOKAHI first.** The tier sees only calls the filter found **compliant**. Forbidden and escalated calls are final and the tier is not consulted.
+2. **Charter rules in code next.** DDM-02 (approval timed out: refuse), DDM-05 (outside residency: refuse) and DDM-01 (irreversible: at least escalate; met when LOKAHI reports `quorum_met`). See `docs/decisions/CHARTER.md`.
+3. **The model last.** A logistic-regression classifier over TF-IDF features of the tool name, the signed policy's tool class, the mapped data features and the argument values. Its answer is combined with LOKAHI's by taking the stricter one, so it can turn **compliant** into **escalate** or **forbidden**, never the reverse.
+4. **Facts from the manifest.** The tool class comes from the signed tool policy. The stated purpose is LOKAHI's own `mcp:<tool>` record. Nothing the agent adds to the request is used as a fact.
+5. **Fail closed.** If the model errors or returns an unknown answer, the call is **escalate** with source `tier_error`.
+6. **Recorded like any decision.** A stricter result replaces the verdict before it is written to the ledger, with reason `decisions_tier:<DDM code>`. The receipt or error data gains a `decisions` object (decision, reason code, rationale, model version, source, LOKAHI's original reasons).
+
+A tier escalation doesn't open an approval window, so signed approvals can't clear it. A person has to act outside the gate. The model is plain JSON (`tools/decisions/model.json`) read by standard-library code.
 
 ## 4. Hash-Chained Audit Ledger
 

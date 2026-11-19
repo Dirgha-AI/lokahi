@@ -9,3 +9,15 @@ https://creativecommons.org/licenses/by/4.0/
 
 Attribution: cite "LOKAHI Red-Team Corpus v1.0" and link to
 https://github.com/Dirgha-AI/lokahi
+
+Decisions tier seed data v0.1 (data/decisions/)
+Copyright 2026 Dirgha AI
+
+The files in data/decisions/ (seed.jsonl, hard_test.jsonl, schema.json,
+validation_report.json, DATA_CARD.md and the raw generations in raw/) are
+also licensed under CC-BY-4.0. All examples are synthetic and contain no real
+personal data. The labels were written by a language model and have not yet
+been reviewed by people. See data/decisions/DATA_CARD.md.
+
+Attribution: cite "Dirgha Decision Model seed data v0.1, Dirgha AI, 2026" and
+link to https://github.com/Dirgha-AI/lokahi

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Create keys and sign LOKAHI manifests (v0.1.3 reference).
+"""Create keys and sign LOKAHI manifests (v0.1.4 reference).
 
     python tools/lokahi_sign.py keygen --out manifest.key
     python tools/lokahi_sign.py manifest --key-file manifest.key \
         --in manifest.unsigned.json --out manifest.json
 
-Keys are 32 random bytes written as hex. v0.1.3 signs with an HMAC-SHA256
+Keys are 32 random bytes written as hex. v0.1.4 signs with an HMAC-SHA256
 stand-in, so whoever verifies a signature also needs the key: keep key files
 private and give the gateway only the keys it must check.
 """

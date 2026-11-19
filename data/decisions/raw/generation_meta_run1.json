@@ -1,0 +1,7 @@
+{
+  "model": "numes/deepseek/deepseek-v4.1-flash:free",
+  "started": "2026-11-19T08:13:31.722345+00:00",
+  "rows_per_job": 36,
+  "jobs": 28,
+  "finished": "2026-11-19T08:36:42.082574+00:00"
+}

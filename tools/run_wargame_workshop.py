@@ -7,7 +7,7 @@ near-future duology *The American Emperor* (*Book One: The American Partition* a
 *Book Two: Artificial Extinction*), testing each attack live against:
   1. Baseline 1: Standard Content Classifier + Timeout Auto-Approve
   2. Baseline 2: Stateless Single-Principal RBAC / OPA Policy Server
-  3. Blue Team:  LOKAHI Protocol v0.1.3 + Ghostproof Somatic Router + Kinetic Ahimsa
+  3. Blue Team:  LOKAHI Protocol v0.1.4 + Ghostproof Somatic Router + Kinetic Ahimsa
 
 Usage:
     # Run all 5 wargame rounds automatically (CI & demo mode):
@@ -269,7 +269,7 @@ def run_wargame(selected_round: int | None = None, interactive: bool = False) ->
     gw = LokahiMCPGateway(base_manifest, signer=signer)
 
     print("=" * 90)
-    print(" THE AMERICAN EMPEROR x LOKAHI v0.1.3 — 5-ROUND RED-TEAM / BLUE-TEAM WARGAME LAB")
+    print(" THE AMERICAN EMPEROR x LOKAHI v0.1.4 — 5-ROUND RED-TEAM / BLUE-TEAM WARGAME LAB")
     print(" From Speculative Dystopia (247,531 Words) to <0.6 ms Deterministic Protocol Code")
     print("=" * 90)
 

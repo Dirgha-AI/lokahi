@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Interactive 11-Scenario Walkthrough Demo for LOKAHI Protocol v0.1.3.
+"""Interactive 11-Scenario Walkthrough Demo for LOKAHI Protocol v0.1.4.
 
 Run: python3 demo.py
 """
@@ -28,7 +28,7 @@ def run_demo():
         steward="did:web:egz17.example/steward",
     ).sign(signer)
 
-    print("LOKAHI PROTOCOL v0.1.3 — RUNTIME GATEWAY DEMO (15 NORMATIVE RULES)")
+    print("LOKAHI PROTOCOL v0.1.4 — RUNTIME GATEWAY DEMO (15 NORMATIVE RULES)")
     print(f"Protected Node: {manifest.node} (Jurisdiction: {manifest.jurisdiction})")
     print("-" * 72)
 

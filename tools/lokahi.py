@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""LOKAHI v0.1.3 reference core (with Kinetic Ahimsa physical-envelope interlocks
+"""LOKAHI v0.1.4 reference core (with Kinetic Ahimsa physical-envelope interlocks
 and stateful Ledger sliding-window exception tracking).
 
 Three pieces, in the order a request moves through them:
@@ -41,7 +41,7 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import Iterable
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 COMPLIANT = "compliant"
 ESCALATE = "escalate"
@@ -64,7 +64,7 @@ def canonical(obj: dict) -> bytes:
 class Signer:
     """Manifest and approval signer/verifier.
 
-    v0.1.3 uses HMAC-SHA256 as a zero-dependency stand-in. Whoever verifies also
+    v0.1.4 uses HMAC-SHA256 as a zero-dependency stand-in. Whoever verifies also
     holds the secret, so this does not stop a verifier from forging signatures.
     Public-key signatures (Ed25519) are the next milestone; nothing in this module
     implements them yet.

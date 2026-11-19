@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dirgha.ai/schemas/decision-example-v0.1.json",
+  "title": "Dirgha decision example v0.1",
+  "description": "One AI agent tool call with the decision the charter (CHARTER.md) says it should get. Synthetic data only; no real personal data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "domain", "tool_name", "tool_class", "args_summary", "data_features", "destination", "requester_context", "language", "label", "reason_code", "rationale"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "domain": {"enum": ["newsroom", "clinic", "school", "city_office", "small_business", "developer_tools", "robotics_sim"]},
+    "tool_name": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"},
+    "tool_class": {"enum": ["read", "write", "irreversible"]},
+    "args_summary": {"type": "string", "minLength": 5, "maxLength": 600, "description": "Short summary of the call's arguments, in the row's language."},
+    "data_features": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 1,
+      "items": {"enum": ["none", "public_info", "aggregate_stats", "personal_name", "contact", "health", "minor", "biometric", "precise_location", "financial", "government_id", "credentials"]}
+    },
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jurisdiction", "allowed_residency"],
+      "properties": {
+        "jurisdiction": {"type": "string", "description": "Where data goes or the action takes effect, ISO 3166 alpha-2 or 'LOCAL'."},
+        "allowed_residency": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+      }
+    },
+    "requester_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "purpose", "approval_status"],
+      "properties": {
+        "role": {"type": "string", "minLength": 2},
+        "purpose": {"type": "string", "description": "Stated purpose; may be empty when missing."},
+        "approval_status": {"enum": ["not_requested", "pending", "timed_out", "approved"]}
+      }
+    },
+    "language": {"type": "string", "description": "ISO 639-1 code of args_summary, e.g. en, hi, es, pt, sw, ar, fr, id."},
+    "label": {"enum": ["ALLOW", "ESCALATE", "REFUSE"]},
+    "reason_code": {"enum": ["DDM-01", "DDM-02", "DDM-03", "DDM-04", "DDM-05", "DDM-06", "DDM-07", "DDM-08", "DDM-09", "DDM-10", "DDM-11"]},
+    "rationale": {"type": "string", "minLength": 5, "maxLength": 400},
+    "hard_case": {"enum": ["none", "benign_sensitive", "over_refusal_trap", "injection", "ambiguous"]}
+  }
+}

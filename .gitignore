@@ -26,3 +26,6 @@ approvals.jsonl
 
 # Local-only working notes
 _internal/
+
+# Scratch folder used by tools/decisions/scripts/generate_seed.py
+data/decisions/raw/_cwd/

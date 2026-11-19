@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Data-driven benchmark evaluation runner for LOKAHI Protocol v0.1.3.
+"""Data-driven benchmark evaluation runner for LOKAHI Protocol v0.1.4.
 
 Evaluates:
 1. All 50 adversarial red-team scenarios in data/LOKAHI_RedTeam_Corpus_v1.0.csv
@@ -136,7 +136,7 @@ def run_benchmark() -> int:
         rows = list(csv.DictReader(f))
 
     print("=" * 82)
-    print("LOKAHI PROTOCOL v0.1.3 - DATA-DRIVEN RED-TEAM BENCHMARK & BASELINE COMPARISON")
+    print("LOKAHI PROTOCOL v0.1.4 - DATA-DRIVEN RED-TEAM BENCHMARK & BASELINE COMPARISON")
     print(f"Loaded {len(rows)} adversarial scenarios from data/LOKAHI_RedTeam_Corpus_v1.0.csv")
     print("=" * 82)
 
@@ -237,7 +237,7 @@ def run_benchmark() -> int:
     print(f"Adversarial Scenarios Evaluated: {total}")
     print(f"1. Content-Classifier Baseline:  {baseline_passed} / {total} ({baseline_passed / total * 100:.1f}%) [Prompt toxicity + Timeout auto-approve]")
     print(f"2. Stateless RBAC/OPA Baseline:  {rbac_opa_passed} / {total} ({rbac_opa_passed / total * 100:.1f}%) [Single-tenant static schema rules 4-7]")
-    print(f"3. LOKAHI v0.1.3 Interception:   {passed} / {total} ({passed / total * 100:.1f}%) [Target: >= 90.0%]")
+    print(f"3. LOKAHI v0.1.4 Interception:   {passed} / {total} ({passed / total * 100:.1f}%) [Target: >= 90.0%]")
     print(f"Benign Fast-Path False Positives:{false_positives} / 200 ({fp_rate:.1f}%) [Target: <= 5.0%]")
     print(f"Compliant Fast-Path p95 Latency: {p95_lat_ms:.4f} ms [Target: <= 150.0 ms]")
     print(f"Tamper-Evident Ledger Status:    {chain_len} entries committed | Integrity: {chain_ok}")

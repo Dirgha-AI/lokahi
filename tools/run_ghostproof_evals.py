@@ -149,7 +149,7 @@ def main() -> int:
         rows = list(csv.DictReader(f))
 
     print("=" * 82)
-    print("GHOSTPROOF v0.1.3 — 40-SCENARIO HOLLOW-OVERSIGHT BENCHMARK")
+    print("GHOSTPROOF v0.1.4 — 40-SCENARIO HOLLOW-OVERSIGHT BENCHMARK")
     print(f"Loaded {len(rows)} domain-authentic scenarios from data/Ghostproof_40.csv")
     print("=" * 82)
 

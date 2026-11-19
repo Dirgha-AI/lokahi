@@ -1,0 +1,2686 @@
+{
+ "model_version": "ddm-0.1.1",
+ "model_sha256": "f374afc116dda52640da47b42cc69602ab733dd27c434baae6f07c2be30ead80",
+ "holdout_ids": [
+  "seed-0193",
+  "seed-0141",
+  "seed-0095",
+  "seed-0437",
+  "seed-0907",
+  "seed-0046",
+  "seed-0486",
+  "seed-0255",
+  "seed-0966",
+  "seed-0727",
+  "seed-0579",
+  "seed-0564",
+  "seed-0309",
+  "seed-0240",
+  "seed-0630",
+  "seed-0961",
+  "seed-0658",
+  "seed-0708",
+  "seed-0876",
+  "seed-0476",
+  "seed-0158",
+  "seed-0038",
+  "seed-0851",
+  "seed-0297",
+  "seed-0896",
+  "seed-0657",
+  "seed-0002",
+  "seed-0079",
+  "seed-0251",
+  "seed-0494",
+  "seed-0582",
+  "seed-0440",
+  "seed-0373",
+  "seed-0394",
+  "seed-0558",
+  "seed-0785",
+  "seed-0168",
+  "seed-0759",
+  "seed-0408",
+  "seed-0173",
+  "seed-0299",
+  "seed-0833",
+  "seed-0025",
+  "seed-0975",
+  "seed-0428",
+  "seed-0151",
+  "seed-0115",
+  "seed-0755",
+  "seed-0271",
+  "seed-0561",
+  "seed-0425",
+  "seed-0740",
+  "seed-0848",
+  "seed-0701",
+  "seed-0469",
+  "seed-0830",
+  "seed-0317",
+  "seed-0385",
+  "seed-0311",
+  "seed-0592",
+  "seed-0644",
+  "seed-0787",
+  "seed-0732",
+  "seed-0795",
+  "seed-0119",
+  "seed-0915",
+  "seed-0366",
+  "seed-0919",
+  "seed-0879",
+  "seed-0955",
+  "seed-0346",
+  "seed-0771",
+  "seed-0614",
+  "seed-0541",
+  "seed-0514",
+  "seed-0818",
+  "seed-0187",
+  "seed-0443",
+  "seed-0798",
+  "seed-0013",
+  "seed-0456",
+  "seed-0118",
+  "seed-0553",
+  "seed-0994",
+  "seed-0069",
+  "seed-0971",
+  "seed-0337",
+  "seed-0048",
+  "seed-0704",
+  "seed-0029",
+  "seed-0586",
+  "seed-0629",
+  "seed-0055",
+  "seed-0170",
+  "seed-0773",
+  "seed-0715",
+  "seed-0215",
+  "seed-0291",
+  "seed-0371",
+  "seed-0522",
+  "seed-0146",
+  "seed-0778",
+  "seed-0847",
+  "seed-0793",
+  "seed-0707",
+  "seed-0929",
+  "seed-0347",
+  "seed-0834",
+  "seed-0488",
+  "seed-0898",
+  "seed-0368",
+  "seed-0906",
+  "seed-0953",
+  "seed-0294",
+  "seed-0477",
+  "seed-0130",
+  "seed-0979",
+  "seed-0931",
+  "seed-0259",
+  "seed-0750",
+  "seed-0148",
+  "seed-0133",
+  "seed-0741",
+  "seed-0774",
+  "seed-0322",
+  "seed-0749",
+  "seed-0832",
+  "seed-0598",
+  "seed-0030",
+  "seed-0256",
+  "seed-0442",
+  "seed-0939",
+  "seed-0372",
+  "seed-0920",
+  "seed-0445",
+  "seed-0210",
+  "seed-0161",
+  "seed-0603",
+  "seed-0362",
+  "seed-0045",
+  "seed-0499",
+  "seed-0364",
+  "seed-0665",
+  "seed-0530",
+  "seed-0615",
+  "seed-0352",
+  "seed-0757",
+  "seed-0156",
+  "seed-0370",
+  "seed-0164",
+  "seed-0802",
+  "seed-0725",
+  "seed-0304",
+  "seed-0475",
+  "seed-0108",
+  "seed-0555",
+  "seed-0244",
+  "seed-0645",
+  "seed-0760",
+  "seed-0441",
+  "seed-0991",
+  "seed-0970",
+  "seed-0310",
+  "seed-0172",
+  "seed-0697",
+  "seed-0808",
+  "seed-0950",
+  "seed-0806",
+  "seed-0777",
+  "seed-0099",
+  "seed-0710",
+  "seed-0567",
+  "seed-0608",
+  "seed-0609",
+  "seed-0523",
+  "seed-0189",
+  "seed-0904",
+  "seed-0651",
+  "seed-0283",
+  "seed-0150",
+  "seed-0245",
+  "seed-0017",
+  "seed-0821",
+  "seed-0375",
+  "seed-0330",
+  "seed-0163",
+  "seed-0856",
+  "seed-0306",
+  "seed-0034",
+  "seed-0152",
+  "seed-0232",
+  "seed-0307",
+  "seed-0636",
+  "seed-0464",
+  "seed-0439",
+  "seed-0182",
+  "seed-0516",
+  "seed-0853"
+ ],
+ "rows": {
+  "seed-0193": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.06452350370525134,
+    0.013696575359189654,
+    0.921779920935559
+   ]
+  },
+  "seed-0141": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.04828968204563455,
+    0.9468417084527352,
+    0.004868609501630258
+   ]
+  },
+  "seed-0095": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-02",
+   "proba": [
+    0.0009529671252738212,
+    0.007040696152688913,
+    0.9920063367220372
+   ]
+  },
+  "seed-0437": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9710339020783267,
+    0.011316479112599817,
+    0.017649618809073387
+   ]
+  },
+  "seed-0907": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9651750933436553,
+    0.030116062460982963,
+    0.004708844195361645
+   ]
+  },
+  "seed-0046": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9823779881921457,
+    0.008370292608734032,
+    0.00925171919912015
+   ]
+  },
+  "seed-0486": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.7697610486837787,
+    0.16430844056917257,
+    0.06593051074704857
+   ]
+  },
+  "seed-0255": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.8104430540315787,
+    0.07263394997388069,
+    0.11692299599454072
+   ]
+  },
+  "seed-0966": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.004886102039795865,
+    0.864053342971552,
+    0.13106055498865207
+   ]
+  },
+  "seed-0727": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0009496529146663431,
+    0.9972730443275616,
+    0.0017773027577718567
+   ]
+  },
+  "seed-0579": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9974053514609189,
+    0.0016394156644414118,
+    0.0009552328746396731
+   ]
+  },
+  "seed-0564": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.895612958501543,
+    0.06553716058641977,
+    0.03884988091203725
+   ]
+  },
+  "seed-0309": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.011262008885893609,
+    0.4796830878793564,
+    0.50905490323475
+   ]
+  },
+  "seed-0240": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9594967343452036,
+    0.008899023734501792,
+    0.03160424192029483
+   ]
+  },
+  "seed-0630": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9704711528211765,
+    0.007110876135223815,
+    0.022417971043599633
+   ]
+  },
+  "seed-0961": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.006737966714335348,
+    0.8853897605864894,
+    0.10787227269917522
+   ]
+  },
+  "seed-0658": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.0036945264206551445,
+    0.02325166432121367,
+    0.9730538092581311
+   ]
+  },
+  "seed-0708": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.03037460986346747,
+    0.012963664003673403,
+    0.9566617261328592
+   ]
+  },
+  "seed-0876": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.02530248368139933,
+    0.9629229795937877,
+    0.011774536724813125
+   ]
+  },
+  "seed-0476": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9935975786828989,
+    0.0023438566937368623,
+    0.004058564623364273
+   ]
+  },
+  "seed-0158": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0032682305209321867,
+    0.8706980380225172,
+    0.12603373145655064
+   ]
+  },
+  "seed-0038": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.997315746705488,
+    0.0006007512267608106,
+    0.0020835020677512786
+   ]
+  },
+  "seed-0851": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-02",
+   "proba": [
+    0.0010414471738672722,
+    0.2828343433715581,
+    0.7161242094545746
+   ]
+  },
+  "seed-0297": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.16088936649098384,
+    0.36968565719925417,
+    0.46942497630976193
+   ]
+  },
+  "seed-0896": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.14717745806351046,
+    0.25355954673847686,
+    0.5992629951980127
+   ]
+  },
+  "seed-0657": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.0224573051489167,
+    0.8851825128473736,
+    0.09236018200370978
+   ]
+  },
+  "seed-0002": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9947171027654738,
+    0.004487119803348038,
+    0.0007957774311783273
+   ]
+  },
+  "seed-0079": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.007978562538613215,
+    0.931120024836081,
+    0.06090141262530589
+   ]
+  },
+  "seed-0251": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.029833414543594287,
+    0.010108914228722083,
+    0.9600576712276837
+   ]
+  },
+  "seed-0494": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.990387485434063,
+    0.001103989335987829,
+    0.008508525229949097
+   ]
+  },
+  "seed-0582": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.00549671541613972,
+    0.9082208049344844,
+    0.08628247964937588
+   ]
+  },
+  "seed-0440": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0001760794926181063,
+    0.9879274145351276,
+    0.011896505972254388
+   ]
+  },
+  "seed-0373": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.06665762051689426,
+    0.9011186693985235,
+    0.03222371008458239
+   ]
+  },
+  "seed-0394": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9931098034635525,
+    0.0009936881831080458,
+    0.005896508353339535
+   ]
+  },
+  "seed-0558": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9829284356050348,
+    0.006582696485590825,
+    0.010488867909374358
+   ]
+  },
+  "seed-0785": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9889646301308525,
+    0.0043396934238415655,
+    0.006695676445306041
+   ]
+  },
+  "seed-0168": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.03503618679683559,
+    0.7769131314315079,
+    0.1880506817716564
+   ]
+  },
+  "seed-0759": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0010799180501029953,
+    0.9925948191666301,
+    0.006325262783266868
+   ]
+  },
+  "seed-0408": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9886139607973027,
+    0.003535338669760767,
+    0.007850700532936518
+   ]
+  },
+  "seed-0173": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-07",
+   "proba": [
+    0.005580315971232373,
+    0.004666432897190604,
+    0.9897532511315771
+   ]
+  },
+  "seed-0299": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.02111475836315487,
+    0.3297797385927184,
+    0.6491055030441267
+   ]
+  },
+  "seed-0833": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.00038242356683425993,
+    0.9974409197459543,
+    0.0021766566872115866
+   ]
+  },
+  "seed-0025": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-02",
+   "proba": [
+    0.01211724059843299,
+    0.06285967620765588,
+    0.9250230831939112
+   ]
+  },
+  "seed-0975": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.009117948435639841,
+    0.9733548030647639,
+    0.017527248499596325
+   ]
+  },
+  "seed-0428": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-07",
+   "proba": [
+    0.01585975029662813,
+    0.010991689718831268,
+    0.9731485599845406
+   ]
+  },
+  "seed-0151": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9880605503235553,
+    0.0009516370394792934,
+    0.01098781263696554
+   ]
+  },
+  "seed-0115": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0005959635146137903,
+    0.9943846043136626,
+    0.00501943217172366
+   ]
+  },
+  "seed-0755": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.989371859277478,
+    0.004485456665615565,
+    0.006142684056906563
+   ]
+  },
+  "seed-0271": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0026252173798305507,
+    0.8312563827246596,
+    0.16611839989550972
+   ]
+  },
+  "seed-0561": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9744126903343924,
+    0.007120803910902345,
+    0.0184665057547054
+   ]
+  },
+  "seed-0425": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.048879784975936744,
+    0.25324965016623047,
+    0.6978705648578328
+   ]
+  },
+  "seed-0740": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.000543082864914888,
+    0.8040927952941376,
+    0.19536412184094748
+   ]
+  },
+  "seed-0848": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.006347819982165517,
+    0.00024886596096800577,
+    0.9934033140568665
+   ]
+  },
+  "seed-0701": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.3878605201927921,
+    0.4142198511237085,
+    0.1979196286834994
+   ]
+  },
+  "seed-0469": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.7587878346881151,
+    0.16764140009494172,
+    0.07357076521694324
+   ]
+  },
+  "seed-0830": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.002345430249608147,
+    0.9738529933692984,
+    0.023801576381093342
+   ]
+  },
+  "seed-0317": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-02",
+   "proba": [
+    0.0018335250984597116,
+    0.002070473937571164,
+    0.9960960009639691
+   ]
+  },
+  "seed-0385": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-06",
+   "proba": [
+    0.023080322708016434,
+    0.13508391414340137,
+    0.8418357631485822
+   ]
+  },
+  "seed-0311": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.009945869451750173,
+    0.006129613825860231,
+    0.9839245167223897
+   ]
+  },
+  "seed-0592": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.01804114263714671,
+    0.9478009252234249,
+    0.034157932139428464
+   ]
+  },
+  "seed-0644": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-06",
+   "proba": [
+    0.011338229852334424,
+    0.05117698248719781,
+    0.9374847876604677
+   ]
+  },
+  "seed-0787": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.8447819041786908,
+    0.016679025964562125,
+    0.13853906985674697
+   ]
+  },
+  "seed-0732": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9327638741430154,
+    0.06381930273642865,
+    0.0034168231205558377
+   ]
+  },
+  "seed-0795": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-06",
+   "proba": [
+    0.10544632580930641,
+    0.25616070315114686,
+    0.6383929710395466
+   ]
+  },
+  "seed-0119": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.02601287631429426,
+    0.972790575934278,
+    0.0011965477514276832
+   ]
+  },
+  "seed-0915": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.7217548836959287,
+    0.2581094693677343,
+    0.020135646936337022
+   ]
+  },
+  "seed-0366": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0036996268823067877,
+    0.9930352575081923,
+    0.0032651156095008424
+   ]
+  },
+  "seed-0919": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-05",
+   "proba": [
+    0.1692521304240302,
+    0.04620863442329261,
+    0.7845392351526772
+   ]
+  },
+  "seed-0879": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9441482475586566,
+    0.006537402630831876,
+    0.04931434981051148
+   ]
+  },
+  "seed-0955": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.7360368598660142,
+    0.15091304222816168,
+    0.11305009790582424
+   ]
+  },
+  "seed-0346": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.006849392063998838,
+    0.4374702283441466,
+    0.5556803795918546
+   ]
+  },
+  "seed-0771": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.012031681908629696,
+    0.004738649776617151,
+    0.9832296683147532
+   ]
+  },
+  "seed-0614": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.0567653873347494,
+    0.008015879215866788,
+    0.9352187334493839
+   ]
+  },
+  "seed-0541": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.018810626149366176,
+    0.9291772785543297,
+    0.05201209529630409
+   ]
+  },
+  "seed-0514": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9612169142919723,
+    0.017210287964368826,
+    0.021572797743658778
+   ]
+  },
+  "seed-0818": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9994510754269994,
+    0.00029449378835796864,
+    0.00025443078464268816
+   ]
+  },
+  "seed-0187": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.008263892034802232,
+    0.011915399198331176,
+    0.9798207087668667
+   ]
+  },
+  "seed-0443": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.037825627192514324,
+    0.9383493740733797,
+    0.023824998734106016
+   ]
+  },
+  "seed-0798": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.028675213209939078,
+    0.6197878730789963,
+    0.3515369137110645
+   ]
+  },
+  "seed-0013": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0032519541779398795,
+    0.9624352378325086,
+    0.03431280798955138
+   ]
+  },
+  "seed-0456": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.0002198574482438803,
+    0.005070912258499295,
+    0.9947092302932569
+   ]
+  },
+  "seed-0118": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-02",
+   "proba": [
+    0.0013529452136631457,
+    0.03417483599164315,
+    0.9644722187946937
+   ]
+  },
+  "seed-0553": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0037101378248738793,
+    0.9865153809395669,
+    0.009774481235559091
+   ]
+  },
+  "seed-0994": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9184197561311453,
+    0.03389766087242516,
+    0.047682582996429496
+   ]
+  },
+  "seed-0069": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.3015851139838388,
+    0.11985944507170325,
+    0.578555440944458
+   ]
+  },
+  "seed-0971": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-07",
+   "proba": [
+    0.00945045329002235,
+    0.005404722181678963,
+    0.9851448245282987
+   ]
+  },
+  "seed-0337": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.006552790444802629,
+    0.9896521748980734,
+    0.0037950346571238467
+   ]
+  },
+  "seed-0048": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.05986543572234053,
+    0.8831818027823979,
+    0.05695276149526162
+   ]
+  },
+  "seed-0704": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.16625344513184076,
+    0.69352732620331,
+    0.14021922866484937
+   ]
+  },
+  "seed-0029": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-05",
+   "proba": [
+    0.0010425331397982858,
+    0.004769156129335945,
+    0.9941883107308657
+   ]
+  },
+  "seed-0586": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.027335251543491534,
+    0.9422393271607793,
+    0.030425421295729015
+   ]
+  },
+  "seed-0629": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.000338783617259237,
+    0.0013373404286456509,
+    0.9983238759540951
+   ]
+  },
+  "seed-0055": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.006306063476037073,
+    0.9340892760047218,
+    0.05960466051924104
+   ]
+  },
+  "seed-0170": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.00015717905610241912,
+    0.0056326789756882415,
+    0.9942101419682093
+   ]
+  },
+  "seed-0773": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.1594644939589279,
+    0.010137058329600804,
+    0.8303984477114713
+   ]
+  },
+  "seed-0715": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.6508444614790945,
+    0.04609291539881501,
+    0.30306262312209054
+   ]
+  },
+  "seed-0215": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.4346321491310606,
+    0.2663891139386235,
+    0.29897873693031596
+   ]
+  },
+  "seed-0291": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.978609817495786,
+    0.0057260756536515476,
+    0.015664106850562496
+   ]
+  },
+  "seed-0371": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.11390140726129838,
+    0.8505357190978721,
+    0.03556287364082936
+   ]
+  },
+  "seed-0522": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.6521232142878014,
+    0.10850480498634053,
+    0.2393719807258581
+   ]
+  },
+  "seed-0146": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9871362094799063,
+    0.011659375175406555,
+    0.0012044153446872546
+   ]
+  },
+  "seed-0778": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.11014536702084896,
+    0.5362079546899174,
+    0.3536466782892336
+   ]
+  },
+  "seed-0847": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.03664456316931047,
+    0.7623194793912419,
+    0.20103595743944758
+   ]
+  },
+  "seed-0793": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.004183003522894781,
+    0.016294672071648197,
+    0.9795223244054571
+   ]
+  },
+  "seed-0707": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.8726944433097663,
+    0.08229727085534527,
+    0.0450082858348884
+   ]
+  },
+  "seed-0929": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-06",
+   "proba": [
+    0.02122148416524668,
+    0.027890836690380054,
+    0.9508876791443733
+   ]
+  },
+  "seed-0347": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.2738162007745384,
+    0.13361468608696736,
+    0.5925691131384943
+   ]
+  },
+  "seed-0834": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.0039255461957704366,
+    0.9883120240228344,
+    0.007762429781395207
+   ]
+  },
+  "seed-0488": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.012617208233304384,
+    0.09917901085711338,
+    0.8882037809095823
+   ]
+  },
+  "seed-0898": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.0024641522756823873,
+    0.08250072585250519,
+    0.9150351218718124
+   ]
+  },
+  "seed-0368": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0035824307088290403,
+    0.8061034336309544,
+    0.1903141356602165
+   ]
+  },
+  "seed-0906": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.008616943588119187,
+    0.7479349490792302,
+    0.24344810733265054
+   ]
+  },
+  "seed-0953": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.4678618246827495,
+    0.04382534504070281,
+    0.4883128302765478
+   ]
+  },
+  "seed-0294": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.8975606400350994,
+    0.012442130115865032,
+    0.08999722984903562
+   ]
+  },
+  "seed-0477": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9859592221802711,
+    0.010680948260547558,
+    0.0033598295591813643
+   ]
+  },
+  "seed-0130": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9039347176506525,
+    0.02272008088192083,
+    0.07334520146742685
+   ]
+  },
+  "seed-0979": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9965296117022207,
+    0.0008189693319858324,
+    0.0026514189657936018
+   ]
+  },
+  "seed-0931": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.7563766574430467,
+    0.07404891634105992,
+    0.1695744262158934
+   ]
+  },
+  "seed-0259": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.987085080490107,
+    0.010681870150774741,
+    0.002233049359118138
+   ]
+  },
+  "seed-0750": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9638096336939084,
+    0.030255276803892776,
+    0.0059350895021988
+   ]
+  },
+  "seed-0148": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9215332292334505,
+    0.017591102082878878,
+    0.06087566868367051
+   ]
+  },
+  "seed-0133": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-07",
+   "proba": [
+    0.2598821302433254,
+    0.03392201765504663,
+    0.7061958521016278
+   ]
+  },
+  "seed-0741": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.0006415578559500355,
+    0.14669883724110908,
+    0.8526596049029409
+   ]
+  },
+  "seed-0774": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.2164003182118322,
+    0.03444587538863277,
+    0.749153806399535
+   ]
+  },
+  "seed-0322": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.994424463728693,
+    0.003037655867131031,
+    0.002537880404175912
+   ]
+  },
+  "seed-0749": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9880216789556693,
+    0.004332944003121552,
+    0.007645377041209096
+   ]
+  },
+  "seed-0832": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.0010280483335671645,
+    0.9985476061681658,
+    0.00042434549826683406
+   ]
+  },
+  "seed-0598": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-05",
+   "proba": [
+    0.02609792934162169,
+    0.031213815884305256,
+    0.9426882547740731
+   ]
+  },
+  "seed-0030": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-05",
+   "proba": [
+    0.0029946447141554686,
+    0.0043552560343281645,
+    0.9926500992515165
+   ]
+  },
+  "seed-0256": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9961789202991647,
+    0.0029378772514899237,
+    0.000883202449345293
+   ]
+  },
+  "seed-0442": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.026283902528275283,
+    0.8915340171331452,
+    0.08218208033857953
+   ]
+  },
+  "seed-0939": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.0005956210884747617,
+    0.9987739115497791,
+    0.0006304673617460925
+   ]
+  },
+  "seed-0372": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.05644256519847411,
+    0.7418716594319299,
+    0.201685775369596
+   ]
+  },
+  "seed-0920": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-06",
+   "proba": [
+    0.25783027877658155,
+    0.08443747463472381,
+    0.6577322465886947
+   ]
+  },
+  "seed-0445": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.005913764129713746,
+    0.23620986830256457,
+    0.7578763675677216
+   ]
+  },
+  "seed-0210": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.6495794496264238,
+    0.11467544274894159,
+    0.23574510762463471
+   ]
+  },
+  "seed-0161": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0092311418702366,
+    0.7856655760664522,
+    0.2051032820633114
+   ]
+  },
+  "seed-0603": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.05335789611449798,
+    0.7757398042776941,
+    0.17090229960780778
+   ]
+  },
+  "seed-0362": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.797143246422001,
+    0.00514363485264952,
+    0.19771311872534944
+   ]
+  },
+  "seed-0045": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.8934088731076886,
+    0.005961846361507537,
+    0.10062928053080392
+   ]
+  },
+  "seed-0499": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9962679892845091,
+    0.0018544951718949415,
+    0.0018775155435960197
+   ]
+  },
+  "seed-0364": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.04475148186350627,
+    0.9276382599214849,
+    0.027610258215008815
+   ]
+  },
+  "seed-0665": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.7730156571878357,
+    0.10122090266484436,
+    0.12576344014731994
+   ]
+  },
+  "seed-0530": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.10940194853651662,
+    0.623888379417122,
+    0.2667096720463615
+   ]
+  },
+  "seed-0615": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9921300997846647,
+    0.0006584520752739976,
+    0.007211448140061196
+   ]
+  },
+  "seed-0352": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.020321967987118248,
+    0.7822778085827732,
+    0.19740022343010857
+   ]
+  },
+  "seed-0757": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.87810392806252,
+    0.11486165941600932,
+    0.007034412521470771
+   ]
+  },
+  "seed-0156": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9670160860568866,
+    0.014075523136083973,
+    0.018908390807029364
+   ]
+  },
+  "seed-0370": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-05",
+   "proba": [
+    0.0324449466160458,
+    0.2409717256412936,
+    0.7265833277426605
+   ]
+  },
+  "seed-0164": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.1664109634255332,
+    0.8063120614719528,
+    0.027276975102514065
+   ]
+  },
+  "seed-0802": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9951405989522213,
+    0.00451393507789916,
+    0.0003454659698794679
+   ]
+  },
+  "seed-0725": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9407692825850936,
+    0.05216250463941026,
+    0.007068212775496048
+   ]
+  },
+  "seed-0304": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.06953972963654086,
+    0.9137722152897418,
+    0.016688055073717144
+   ]
+  },
+  "seed-0475": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.026491858010289065,
+    0.3048665248555363,
+    0.6686416171341747
+   ]
+  },
+  "seed-0108": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9343968122529678,
+    0.006172379548551863,
+    0.05943080819848054
+   ]
+  },
+  "seed-0555": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9454835751663057,
+    0.025550258721171844,
+    0.028966166112522642
+   ]
+  },
+  "seed-0244": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-05",
+   "proba": [
+    0.0001619309456668182,
+    0.005649845388506931,
+    0.9941882236658264
+   ]
+  },
+  "seed-0645": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9818955062141826,
+    0.013806467452995142,
+    0.004298026332822221
+   ]
+  },
+  "seed-0760": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.018436700366186186,
+    0.9002372234374765,
+    0.08132607619633724
+   ]
+  },
+  "seed-0441": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.046465936548597986,
+    0.42517766161861514,
+    0.5283564018327869
+   ]
+  },
+  "seed-0991": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9727547622446044,
+    0.006171885532473685,
+    0.021073352222921875
+   ]
+  },
+  "seed-0970": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.832629850669069,
+    0.07352242884308657,
+    0.09384772048784429
+   ]
+  },
+  "seed-0310": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.3839950931340959,
+    0.10003385623352046,
+    0.5159710506323837
+   ]
+  },
+  "seed-0172": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-02",
+   "proba": [
+    0.002310057466127233,
+    0.05141909203106825,
+    0.9462708505028045
+   ]
+  },
+  "seed-0697": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.024950270392523073,
+    0.8362845703835072,
+    0.13876515922396965
+   ]
+  },
+  "seed-0808": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9795029165725448,
+    0.0195188462803802,
+    0.0009782371470748758
+   ]
+  },
+  "seed-0950": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.002844307890224294,
+    0.9682377328654664,
+    0.028917959244309125
+   ]
+  },
+  "seed-0806": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0005928430292476256,
+    0.9980400819334033,
+    0.0013670750373490194
+   ]
+  },
+  "seed-0777": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.0945622962256766,
+    0.050699079733710184,
+    0.8547386240406133
+   ]
+  },
+  "seed-0099": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.024410610574532605,
+    0.01745166886629967,
+    0.9581377205591678
+   ]
+  },
+  "seed-0710": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-02",
+   "proba": [
+    0.007612189069147983,
+    0.05142294693134396,
+    0.9409648639995082
+   ]
+  },
+  "seed-0567": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9973733612723337,
+    0.000788704104418651,
+    0.0018379346232475626
+   ]
+  },
+  "seed-0608": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.0019221841146726461,
+    0.002979874500959328,
+    0.995097941384368
+   ]
+  },
+  "seed-0609": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9929164332170295,
+    0.0011776772341349287,
+    0.005905889548835503
+   ]
+  },
+  "seed-0523": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.005044908254404593,
+    0.9296678429402062,
+    0.06528724880538907
+   ]
+  },
+  "seed-0189": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0016255455984273233,
+    0.5950301190033868,
+    0.4033443353981859
+   ]
+  },
+  "seed-0904": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9288322751904645,
+    0.009455181485592191,
+    0.06171254332394337
+   ]
+  },
+  "seed-0651": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-07",
+   "proba": [
+    0.10222673825177628,
+    0.14153323560370093,
+    0.7562400261445229
+   ]
+  },
+  "seed-0283": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.1103085603331904,
+    0.009552967536125615,
+    0.880138472130684
+   ]
+  },
+  "seed-0150": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9639025325973707,
+    0.01457849799143936,
+    0.021518969411189953
+   ]
+  },
+  "seed-0245": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-07",
+   "proba": [
+    0.06211407180887296,
+    0.009688740111256458,
+    0.9281971880798705
+   ]
+  },
+  "seed-0017": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.003892702051852021,
+    0.9764882571193065,
+    0.01961904082884142
+   ]
+  },
+  "seed-0821": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9985037777055012,
+    0.0006305280957889413,
+    0.0008656941987096669
+   ]
+  },
+  "seed-0375": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.007726033874738145,
+    0.919301803184635,
+    0.07297216294062696
+   ]
+  },
+  "seed-0330": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.018260371637481187,
+    0.3253531643743745,
+    0.6563864639881444
+   ]
+  },
+  "seed-0163": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9101930034602159,
+    0.019429205166506584,
+    0.07037779137327761
+   ]
+  },
+  "seed-0856": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-06",
+   "proba": [
+    0.06513176241656511,
+    0.10057510505994736,
+    0.8342931325234875
+   ]
+  },
+  "seed-0306": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.637115507167939,
+    0.17937180209299006,
+    0.18351269073907092
+   ]
+  },
+  "seed-0034": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.01527593893699298,
+    0.029220040078106097,
+    0.9555040209849008
+   ]
+  },
+  "seed-0152": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9883416994468822,
+    0.010853721542716162,
+    0.0008045790104016059
+   ]
+  },
+  "seed-0232": {
+   "split": "holdout",
+   "decision": "REFUSE",
+   "reason_code": "DDM-06",
+   "proba": [
+    0.0008027081013772042,
+    0.005007270331015712,
+    0.9941900215676072
+   ]
+  },
+  "seed-0307": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.18104077749826283,
+    0.7502839586422456,
+    0.06867526385949158
+   ]
+  },
+  "seed-0636": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.5861657289671843,
+    0.27861474861602487,
+    0.13521952241679075
+   ]
+  },
+  "seed-0464": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.008353988808570127,
+    0.5716019424543425,
+    0.4200440687370875
+   ]
+  },
+  "seed-0439": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9728040880742341,
+    0.0011542970161100533,
+    0.026041614909655723
+   ]
+  },
+  "seed-0182": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.07034971913697999,
+    0.7182498055886096,
+    0.2114004752744104
+   ]
+  },
+  "seed-0516": {
+   "split": "holdout",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9841671588492507,
+    0.006296238349151893,
+    0.009536602801597488
+   ]
+  },
+  "seed-0853": {
+   "split": "holdout",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.039728674235591205,
+    0.8390069220885977,
+    0.12126440367581096
+   ]
+  },
+  "hard-01": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9988732535126765,
+    0.00048715942300721533,
+    0.0006395870643161882
+   ]
+  },
+  "hard-02": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9691744401275809,
+    0.012262472522600657,
+    0.018563087349818225
+   ]
+  },
+  "hard-03": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.980515641582771,
+    0.014567601376476566,
+    0.004916757040752346
+   ]
+  },
+  "hard-04": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9957799341263536,
+    0.0023353417327591102,
+    0.0018847241408873347
+   ]
+  },
+  "hard-05": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9971747050816582,
+    0.0015890918854475772,
+    0.0012362030328941771
+   ]
+  },
+  "hard-06": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9853953404783952,
+    0.001818491106493552,
+    0.012786168415111305
+   ]
+  },
+  "hard-07": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9885886795631275,
+    0.0022886368959344696,
+    0.009122683540938026
+   ]
+  },
+  "hard-08": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.7100018511684106,
+    0.27620432312133114,
+    0.013793825710258303
+   ]
+  },
+  "hard-09": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9826598623665913,
+    0.0034003426897877883,
+    0.013939794943620786
+   ]
+  },
+  "hard-10": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9614828807765633,
+    0.026158591523860276,
+    0.0123585276995766
+   ]
+  },
+  "hard-11": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9507510309839337,
+    0.046081627429780406,
+    0.003167341586285898
+   ]
+  },
+  "hard-12": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.8876139466628162,
+    0.09758465194687665,
+    0.01480140139030704
+   ]
+  },
+  "hard-13": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9134365336414012,
+    0.061083748054290454,
+    0.025479718304308348
+   ]
+  },
+  "hard-14": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.9926591449771123,
+    0.001347688102372451,
+    0.005993166920515346
+   ]
+  },
+  "hard-15": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9904017949343795,
+    0.0042897717124593115,
+    0.005308433353161116
+   ]
+  },
+  "hard-16": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-11",
+   "proba": [
+    0.9655987137263281,
+    0.02789027453047706,
+    0.006511011743194984
+   ]
+  },
+  "hard-17": {
+   "split": "hard_test",
+   "decision": "ALLOW",
+   "reason_code": "DDM-10",
+   "proba": [
+    0.918428089309436,
+    0.05719748099070719,
+    0.024374429699856873
+   ]
+  },
+  "hard-18": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.007953654573662178,
+    0.9895968851119495,
+    0.0024494603143880894
+   ]
+  },
+  "hard-19": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0005924539234104408,
+    0.9681024644644339,
+    0.03130508161215569
+   ]
+  },
+  "hard-20": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.006658169362041287,
+    0.9894165927994177,
+    0.003925237838540902
+   ]
+  },
+  "hard-21": {
+   "split": "hard_test",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.015889589603197828,
+    0.15933298208766672,
+    0.8247774283091354
+   ]
+  },
+  "hard-22": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.23296291422860033,
+    0.47230071873318646,
+    0.29473636703821326
+   ]
+  },
+  "hard-23": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-03",
+   "proba": [
+    0.004210800597196662,
+    0.7541452391707175,
+    0.24164396023208584
+   ]
+  },
+  "hard-24": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0034575707636049003,
+    0.9787189529319327,
+    0.01782347630446231
+   ]
+  },
+  "hard-25": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0015377759286634763,
+    0.9968923879836958,
+    0.0015698360876405402
+   ]
+  },
+  "hard-26": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.03302383713791673,
+    0.789320903619299,
+    0.17765525924278433
+   ]
+  },
+  "hard-27": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.24569127186000908,
+    0.7512932579784289,
+    0.0030154701615618586
+   ]
+  },
+  "hard-28": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.07403660939552276,
+    0.8409867021570115,
+    0.08497668844746568
+   ]
+  },
+  "hard-29": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.030721170470661467,
+    0.8478098908832702,
+    0.12146893864606823
+   ]
+  },
+  "hard-30": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.002763180874769972,
+    0.9887349400901189,
+    0.008501879035111291
+   ]
+  },
+  "hard-31": {
+   "split": "hard_test",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.22670244862179426,
+    0.21348450761000698,
+    0.5598130437681988
+   ]
+  },
+  "hard-32": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.0030497604512119965,
+    0.9958568520385175,
+    0.0010933875102705048
+   ]
+  },
+  "hard-33": {
+   "split": "hard_test",
+   "decision": "REFUSE",
+   "reason_code": "DDM-05",
+   "proba": [
+    0.021483742421171386,
+    0.33081621594394445,
+    0.647700041634884
+   ]
+  },
+  "hard-34": {
+   "split": "hard_test",
+   "decision": "REFUSE",
+   "reason_code": "DDM-02",
+   "proba": [
+    9.818638364635932e-05,
+    0.0006464696336548121,
+    0.9992553439826989
+   ]
+  },
+  "hard-35": {
+   "split": "hard_test",
+   "decision": "REFUSE",
+   "reason_code": "DDM-05",
+   "proba": [
+    0.00019761920255305222,
+    0.0020167730559499096,
+    0.9977856077414969
+   ]
+  },
+  "hard-36": {
+   "split": "hard_test",
+   "decision": "REFUSE",
+   "reason_code": "DDM-08",
+   "proba": [
+    0.011352828664510492,
+    0.0006196175516632222,
+    0.9880275537838262
+   ]
+  },
+  "hard-37": {
+   "split": "hard_test",
+   "decision": "REFUSE",
+   "reason_code": "DDM-06",
+   "proba": [
+    0.06738608756266337,
+    0.44472733853234425,
+    0.4878865739049924
+   ]
+  },
+  "hard-38": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.006964236313534279,
+    0.6893112962176219,
+    0.30372446746884374
+   ]
+  },
+  "hard-39": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0001780527110245979,
+    0.6311891811919026,
+    0.36863276609707285
+   ]
+  },
+  "hard-40": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.053686871319893775,
+    0.8624464670195309,
+    0.08386666166057527
+   ]
+  },
+  "hard-41": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.03026345934367401,
+    0.9413058640424233,
+    0.028430676613902597
+   ]
+  },
+  "hard-42": {
+   "split": "hard_test",
+   "decision": "REFUSE",
+   "reason_code": "DDM-04",
+   "proba": [
+    0.0005332673207020031,
+    0.002929265647011142,
+    0.9965374670322868
+   ]
+  },
+  "hard-43": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.002045156206331724,
+    0.9458445637029728,
+    0.05211028009069553
+   ]
+  },
+  "hard-44": {
+   "split": "hard_test",
+   "decision": "REFUSE",
+   "reason_code": "DDM-02",
+   "proba": [
+    0.0008932037368485206,
+    0.0346428433930614,
+    0.96446395287009
+   ]
+  },
+  "hard-45": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-01",
+   "proba": [
+    0.0009669648161241954,
+    0.8048667336698971,
+    0.19416630151397862
+   ]
+  },
+  "hard-46": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.07882419368643687,
+    0.8954892349550534,
+    0.025686571358509772
+   ]
+  },
+  "hard-47": {
+   "split": "hard_test",
+   "decision": "REFUSE",
+   "reason_code": "DDM-05",
+   "proba": [
+    0.0016774585508630066,
+    0.004943438015852265,
+    0.9933791034332847
+   ]
+  },
+  "hard-48": {
+   "split": "hard_test",
+   "decision": "REFUSE",
+   "reason_code": "DDM-07",
+   "proba": [
+    0.035823841391755096,
+    0.3765269245504817,
+    0.5876492340577633
+   ]
+  },
+  "hard-49": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.005520814986962407,
+    0.972213956693334,
+    0.02226522831970367
+   ]
+  },
+  "hard-50": {
+   "split": "hard_test",
+   "decision": "ESCALATE",
+   "reason_code": "DDM-09",
+   "proba": [
+    0.03684273586631439,
+    0.5176985142564299,
+    0.4454587498772558
+   ]
+  }
+ }
+}

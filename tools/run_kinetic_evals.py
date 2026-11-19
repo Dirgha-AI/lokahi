@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Kinetic Ahimsa Embodied Robotics Verification Runner.
 
-Evaluates LOKAHI v0.1.3 pre-flight physical boundary manifests across three
+Evaluates LOKAHI v0.1.4 pre-flight physical boundary manifests across three
 open-source robotics platforms (N = 30 out-of-envelope planner injections each = 90 total,
 plus 90 benign in-envelope control trajectories):
 
@@ -91,7 +91,7 @@ def main() -> int:
     ]
 
     print("=" * 86)
-    print("KINETIC AHIMSA v0.1.3 — EMBODIED ROBOTICS PRE-FLIGHT VERIFICATION")
+    print("KINETIC AHIMSA v0.1.4 — EMBODIED ROBOTICS PRE-FLIGHT VERIFICATION")
     print("=" * 86)
 
     all_passed = True

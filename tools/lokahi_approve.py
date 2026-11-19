@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Sign a LOKAHI approval for one action digest (v0.1.3 reference).
+"""Sign a LOKAHI approval for one action digest (v0.1.4 reference).
 
 When a call needs approval, the gateway's response includes `action_digest`.
 Each approver signs that digest with their own key and appends the record to
 the approvals file the gateway reads. The agent never writes that file.
 
-v0.1.3 signs with the HMAC-SHA256 stand-in, so the gateway holds each
+v0.1.4 signs with the HMAC-SHA256 stand-in, so the gateway holds each
 approver's key too. Public-key (Ed25519) approvals are the next milestone.
 
     python tools/lokahi_approve.py --key-file editor.key --operator editor:fiction \

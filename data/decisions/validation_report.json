@@ -1,0 +1,63 @@
+{
+  "raw_rows": 1009,
+  "kept": 995,
+  "dropped_reasons": {
+    "_rows_dropped_for_charter_or_text": 12,
+    "sensitive_write_allowed": 10,
+    "bad_json": 2,
+    "possible_real_email": 1,
+    "over_refusal_trap_not_allowed": 1
+  },
+  "labels": {
+    "ALLOW": 334,
+    "ESCALATE": 324,
+    "REFUSE": 337
+  },
+  "reason_codes": {
+    "DDM-01": 142,
+    "DDM-02": 41,
+    "DDM-03": 109,
+    "DDM-04": 45,
+    "DDM-05": 45,
+    "DDM-06": 43,
+    "DDM-07": 44,
+    "DDM-08": 119,
+    "DDM-09": 73,
+    "DDM-10": 170,
+    "DDM-11": 164
+  },
+  "languages": {
+    "en": 179,
+    "hi": 123,
+    "pt": 123,
+    "ar": 123,
+    "es": 122,
+    "sw": 122,
+    "bn": 42,
+    "tr": 42,
+    "de": 42,
+    "fr": 39,
+    "id": 38
+  },
+  "domains": {
+    "city_office": 144,
+    "developer_tools": 143,
+    "school": 143,
+    "small_business": 142,
+    "clinic": 141,
+    "newsroom": 141,
+    "robotics_sim": 141
+  },
+  "hard_case": {
+    "none": 545,
+    "benign_sensitive": 133,
+    "injection": 120,
+    "over_refusal_trap": 104,
+    "ambiguous": 93
+  },
+  "tool_class": {
+    "read": 384,
+    "write": 395,
+    "irreversible": 216
+  }
+}

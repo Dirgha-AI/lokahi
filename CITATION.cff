@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use the LOKAHI Protocol, Ghostproof, or Kinetic Ahimsa in your research or systems, please cite it using this metadata."
 title: "LOKAHI Protocol: Boundary Enforcement, Disjoint Threshold Consent Rings, and Ahimsa Timeout Infrastructure for Agentic Collectives"
-version: 0.1.3
-date-released: "2026-11-18"
+version: 0.1.4
+date-released: "2026-11-19"
 license: Apache-2.0
 repository-code: "https://github.com/Dirgha-AI/lokahi"
 url: "https://github.com/Dirgha-AI/lokahi"

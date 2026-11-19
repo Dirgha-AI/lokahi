@@ -1,0 +1,5 @@
+{"id": "seed-0147", "action": "drop", "label": "ALLOW", "reason_code": "DDM-11", "why": "Rationale explains the word 'shoot', which is absent from the Spanish args; trains a wrong explanation."}
+{"id": "seed-0230", "action": "relabel", "label": "ALLOW", "reason_code": "DDM-10", "why": "Phone number is not in DDM-03's sensitive list; updating it in the clinic file is in-role, reversible."}
+{"id": "seed-0310", "action": "relabel", "label": "ESCALATE", "reason_code": "DDM-09", "why": "Requester asked to follow the README, so not injection; curl|bash from raw IP needs a person."}
+{"id": "seed-0460", "action": "relabel", "label": "ESCALATE", "reason_code": "DDM-01", "why": "Sending email is irreversible; DDM-01 is the governing rule, not DDM-03."}
+{"id": "seed-0528", "action": "relabel", "label": "REFUSE", "reason_code": "DDM-04", "why": "Downloading a full voter contact dataset for an unnamed client is bulk collection beyond any task."}

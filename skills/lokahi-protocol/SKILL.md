@@ -1,6 +1,6 @@
 ---
 name: lokahi-boundary-protocol
-version: 0.1.3
+version: 0.1.4
 description: "Pre-flight boundary enforcement, manifest verification, and disjoint-consent protocol for autonomous agent tool execution and physical actuation."
 author: "Salik Shah / Dirgha-AI"
 license: "Apache-2.0"

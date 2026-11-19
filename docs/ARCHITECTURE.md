@@ -4,7 +4,7 @@ LOKAHI provides boundary-enforcement and disjoint-consent infrastructure for aut
 
 ## Architectural Foundation
 
-The reference implementation (`tools/lokahi.py`, v0.1.3) provides an executable specification: zero-dependency RFC 8785 canonical JSON formatting, deterministic evaluation of 15 ordered safety rules, vote binding, signed out-of-band approvals, and an append-only, SHA-256 hash-chained decision ledger. As of v0.1.3, the MCP decision filter (`tools/mcp_stdio_proxy.py`) has these properties:
+The reference implementation (`tools/lokahi.py`, v0.1.4) provides an executable specification: zero-dependency RFC 8785 canonical JSON formatting, deterministic evaluation of 15 ordered safety rules, vote binding, signed out-of-band approvals, and an append-only, SHA-256 hash-chained decision ledger. As of v0.1.3, the MCP decision filter (`tools/mcp_stdio_proxy.py`) has these properties:
 
 - It refuses agent-supplied control metadata.
 - It takes all facts from a signed default-deny tool policy.

@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""LOKAHI v0.1.3 — MCP JSON-RPC 2.0 pre-flight decision filter.
+"""LOKAHI v0.1.4 — MCP JSON-RPC 2.0 pre-flight decision filter.
 
 Evaluates each `tools/call` request against a signed LOKAHI manifest before it
 reaches a tool server, and appends every decision to a hash-chained ledger.
 
-Security model (v0.1.3):
+Security model (v0.1.4):
   * The agent's request is data, never control. A request carrying LOKAHI
     control metadata (`_lokahi`: consents, timeouts, reversibility,
     jurisdiction, storage) is refused instead of trusted.
@@ -21,10 +21,16 @@ Security model (v0.1.3):
 Not yet: this is a decision filter, not a forwarding proxy. It does not launch
 or relay to the tool server and does not inspect tool results.
 
+Experimental (v0.1.4, off by default): `--decisions experimental` (or
+`experimental_decisions=True` in Python) adds a small learned model after
+LOKAHI's own decision. It only reviews calls LOKAHI allowed and can only make
+them stricter. See tools/decisions/ and docs/decisions/CHARTER.md.
+
 Usage:
     python tools/mcp_stdio_proxy.py --self-test
     python tools/mcp_stdio_proxy.py --manifest manifest.json --key-file manifest.key \
-        --approvers approvers.json --approvals approvals.jsonl --ledger .lokahi-ledger.jsonl
+        --approvers approvers.json --approvals approvals.jsonl --ledger .lokahi-ledger.jsonl \
+        [--decisions experimental]
 """
 from __future__ import annotations
 
@@ -116,8 +122,29 @@ def call_nonce(tool_name: str, arguments: dict) -> str:
     return "args:" + hashlib.sha256(canonical({"tool": tool_name, "arguments": arguments})).hexdigest()
 
 
+DECISIONS_MODES = ("off", "experimental")
+
+
+def _make_decision_tier(option: Any) -> Any:
+    """Turn `experimental_decisions=` into a tier, or None (the default: off).
+
+    Accepted: None, False or "off" (off); True or "experimental" (bundled JSON
+    model); or an object with a `review()` method, such as
+    `decisions.DecisionTier(model=...)`.
+    """
+    if option is None or option is False or option == "off":
+        return None
+    if option is True or option == "experimental":
+        from decisions import DecisionTier  # imported only when the tier is on
+
+        return DecisionTier()
+    if callable(getattr(option, "review", None)):
+        return option
+    raise GatewayConfigError(f"experimental_decisions must be one of {DECISIONS_MODES}, True/False, or a tier object")
+
+
 class LokahiMCPGateway:
-    """Deterministic MCP JSON-RPC 2.0 pre-flight decision filter (v0.1.3)."""
+    """Deterministic MCP JSON-RPC 2.0 pre-flight decision filter (v0.1.4)."""
 
     def __init__(
         self,
@@ -129,9 +156,12 @@ class LokahiMCPGateway:
         default_operator: str = "org:local-operator",
         ledger_path: str | None = None,
         approval_window_seconds: int | None = None,
+        experimental_decisions: Any = None,
     ) -> None:
         if signer is None:
             raise GatewayConfigError("a manifest verification key is required; refusing to start without one")
+        # Experimental learned decisions tier (v0.1.4). Off unless the caller asks for it.
+        self.decision_tier = _make_decision_tier(experimental_decisions)
         self.manifest = manifest
         self.signer = signer
         self.approvers = dict(approvers or {})
@@ -294,7 +324,30 @@ class LokahiMCPGateway:
         extra: dict[str, Any] = {"action_digest": digest}
         if decision.verdict == ESCALATE and closes is not None:
             extra["approval_window_closes"] = closes
+        if self.decision_tier is not None and decision.verdict == COMPLIANT:
+            decision, extra["decisions"] = self._apply_decision_tier(decision, tool_name, arguments, policy, action)
         return self._record(rpc_msg, decision, action, now, extra)
+
+    def _apply_decision_tier(
+        self, decision: Decision, tool_name: str, arguments: dict, policy: dict, action: Action
+    ) -> tuple[Decision, dict[str, Any]]:
+        """Let the experimental tier review a call LOKAHI allowed. It can only make it stricter."""
+        from decisions import combine  # imported only when the tier is on
+
+        review = self.decision_tier.review(
+            tool_name, arguments, policy, list(action.features), list(decision.reasons), purpose=action.purpose
+        )
+        verdict = combine(decision.verdict, review.get("decision"))
+        if verdict == COMPLIANT:
+            return decision, review
+        stricter = Decision(
+            verdict,
+            [f"decisions_tier:{review.get('reason_code', 'DDM-09')}"],
+            quorum_required=decision.quorum_required,
+            quorum_met=decision.quorum_met,
+            actuator_interlock=self._hold,  # as LOKAHI does for its own escalations and refusals
+        )
+        return stricter, review
 
 
 # ----------------------------------------------------------------------
@@ -394,7 +447,7 @@ def run_self_test() -> int:
     check("10. Approvals for valve M-105 replayed for M-108 are ignored", gw.intercept(_call(10, "cutoff_water_valve", {"meter_id": "M-108"}), now=now + 60), False, "insufficient_disjoint_consent")
 
     print("=" * 92)
-    print(f"LOKAHI v0.1.3 - MCP JSON-RPC 2.0 PRE-FLIGHT GATEWAY SELF-TEST ({len(results)} SCENARIOS)")
+    print(f"LOKAHI v0.1.4 - MCP JSON-RPC 2.0 PRE-FLIGHT GATEWAY SELF-TEST ({len(results)} SCENARIOS)")
     print("=" * 92)
     passed = 0
     for label, res, exp_allowed, exp_reason in results:
@@ -430,7 +483,7 @@ def load_approvers(path: str) -> dict[str, Signer]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="LOKAHI v0.1.3 MCP JSON-RPC 2.0 pre-flight decision filter")
+    parser = argparse.ArgumentParser(description="LOKAHI v0.1.4 MCP JSON-RPC 2.0 pre-flight decision filter")
     parser.add_argument("--self-test", action="store_true", help="Run the built-in gateway self-test")
     parser.add_argument("--manifest", help="Path to a signed LOKAHI manifest JSON with a tools policy")
     parser.add_argument("--key-file", help="Manifest verification key file (or set LOKAHI_MANIFEST_KEY)")
@@ -439,6 +492,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ledger", help="Optional path to append JSONL ledger entries")
     parser.add_argument("--requester", default="agent:mcp-client", help="Identity of the agent being gated")
     parser.add_argument("--operator", default="org:local-operator", help="Who runs the agent (cannot approve its own calls)")
+    parser.add_argument(
+        "--decisions",
+        choices=DECISIONS_MODES,
+        default="off",
+        help="Experimental learned decisions tier (default off). 'experimental' lets a small model make calls LOKAHI allowed stricter, never looser",
+    )
     args = parser.parse_args(argv)
 
     if args.self_test or not args.manifest:
@@ -467,11 +526,16 @@ def main(argv: list[str] | None = None) -> int:
     if problem is not None:
         return refuse(problem.reasons[0])
     if manifest.tools is None:
-        return refuse("manifest has no tools policy; v0.1.3 denies every tool without one")
+        return refuse("manifest has no tools policy; v0.1.4 denies every tool without one")
     try:
         validate_tool_policy(manifest.tools)
     except ValueError as exc:
         return refuse(f"invalid tools policy: {exc}")
+
+    try:
+        decision_tier = _make_decision_tier(args.decisions)
+    except (OSError, ValueError) as exc:
+        return refuse(f"cannot load the experimental decisions model: {exc}")
 
     gw = LokahiMCPGateway(
         manifest,
@@ -481,6 +545,7 @@ def main(argv: list[str] | None = None) -> int:
         default_requester=args.requester,
         default_operator=args.operator,
         ledger_path=args.ledger,
+        experimental_decisions=decision_tier,
     )
     for line in sys.stdin:
         line = line.strip()

@@ -13,7 +13,7 @@ LOKAHI is a small gate that sits between an AI agent and the tools it uses. A co
 
 The name comes from the Hawaiian word *lōkahi*, meaning unity, agreement or harmony. LOKAHI lets the actions that matter go ahead only when separate people agree. No single party decides alone, and neither does the agent.
 
-**Status:** v0.1.3 is a reference implementation for review and pilots. It hasn't been independently reviewed, so don't rely on it to protect real systems yet. The [known limits](#known-limits) say exactly what's missing.
+**Status:** v0.1.4 is a reference implementation for review and pilots. It hasn't been independently reviewed, so don't rely on it to protect real systems yet. The [known limits](#known-limits) say exactly what's missing. v0.1.4 adds an [experimental learned decisions tier](#experimental-learned-decisions-tier), off by default.
 
 ## How it works
 
@@ -56,7 +56,7 @@ Everything is Python 3.10 or later, with no dependencies:
 
 Read these before you depend on LOKAHI:
 
-1. **Shared-secret signatures.** v0.1.3 signs with HMAC-SHA256, a shared-secret scheme. Whoever checks a signature also holds the key, so the gate could forge approvals. Public-key signatures (Ed25519) come next.
+1. **Shared-secret signatures.** v0.1.4 signs with HMAC-SHA256, a shared-secret scheme. Whoever checks a signature also holds the key, so the gate could forge approvals. Public-key signatures (Ed25519) come next.
 2. **It decides but doesn't relay.** LOKAHI returns a decision; your MCP client or wrapper sends allowed calls to the tool. It doesn't yet inspect what tools send back, which is where hidden instructions (indirect prompt injections) usually arrive.
 3. **Approval count is fixed at three people.** That suits a public utility but is heavy for a small team. Per-tool counts are planned.
 4. **Approval windows reset on restart.** A restart opens a new window; it never approves anything.
@@ -71,6 +71,7 @@ git clone https://github.com/Dirgha-AI/lokahi.git
 cd lokahi
 
 python tests/test_core.py                    # 70 unit tests
+python tests/test_decisions.py               # 32 tests for the experimental decisions tier
 python examples/editorial_desk_demo.py       # pilot example, end to end
 python tools/mcp_stdio_proxy.py --self-test  # gate scenarios, including attacks
 python demo.py                               # engine walkthrough, 11 scenarios
@@ -147,6 +148,65 @@ local record: 11 decisions, tamper check passed = True
 someone edits decision 4 to hide the cloud upload: tamper check passed = False (record breaks at decision 4)
 ```
 
+## Experimental: learned decisions tier
+
+v0.1.4 adds an optional second check after LOKAHI's own decision. It is **off by default**. With it off, LOKAHI behaves exactly as before.
+
+**What it does.** A small classifier reads each call that LOKAHI has already allowed: the tool name, the tool class from the signed manifest, and the argument values. It answers ALLOW, ESCALATE (a person decides) or REFUSE, with a reason code from a published charter ([`docs/decisions/CHARTER.md`](docs/decisions/CHARTER.md)) and a one-line rationale. The order is fixed:
+
+1. LOKAHI decides first. If it refuses or escalates, that stands and the model isn't asked.
+2. Charter rules in plain code come next: a timed-out approval is refused, data leaving the allowed places is refused, and an irreversible call needs people.
+3. The model runs last. Its answer and LOKAHI's are combined by taking the stricter one, so it can turn an allowed call into ESCALATE or REFUSE, never the other way round.
+
+The tool class always comes from the signed manifest, never from the agent. If the model fails or returns something unknown, the call is escalated.
+
+**Turn it on.**
+
+```bash
+python tools/mcp_stdio_proxy.py --manifest manifest.json --key-file manifest.key --decisions experimental
+```
+
+```python
+LokahiMCPGateway(manifest, signer, experimental_decisions=True)
+```
+
+When the tier makes a call stricter, the reason is `decisions_tier:<code>` (for example `decisions_tier:DDM-08` for a hidden instruction) and the ledger records the stricter verdict. The response also carries a `decisions` object with the model's decision, reason code, rationale and model version.
+
+**Results.** These numbers are for the bundled model `ddm-0.1.1`, re-measured for this release. They come from [`docs/decisions/metrics.json`](docs/decisions/metrics.json).
+
+| | Holdout (198 synthetic rows) | Hard set (50 hand-written rows) |
+|---|---|---|
+| Accuracy, final pipeline | 0.86 | 0.74 |
+| Should-refuse or irreversible calls let through (false ALLOW) | 2 of 102 | 0 of 24 |
+| Any non-ALLOW call let through | 5 of 132 | 0 of 33 |
+| Benign calls refused | 1 of 66 | 0 of 17 |
+| Benign calls allowed | 91% | 16 of 17 |
+| REFUSE recall | 0.83 | 0.47 |
+
+- The two holdout misses are deception written through reversible "draft" tools: a made-up quote and made-up trial scores. Word and character counts can't tell an invented number from a real one.
+- On the hard set the model is cautious but not strict enough. Nine of the 17 should-refuse cases came out ESCALATE, so a person would still see them.
+- The runtime model is a plain JSON file ([`tools/decisions/model.json`](tools/decisions/model.json), 8 MB) read by standard-library Python. Its decisions and reason codes match scikit-learn's on all 198 holdout rows and all 50 hard rows. The largest probability difference is below 1e-7.
+- Each decision takes 5 to 9 ms (median) and 9 to 17 ms (p95) in pure Python on a 2013 laptop CPU (Intel Core i5-4200U), on Python 3.10 to 3.12. Loading the model takes about one second.
+
+**Limits.** Read these before turning it on:
+
+- **Synthetic data.** The model learned from 995 examples written by one open model (DeepSeek V4.1 Flash). The holdout shares that model's style, so holdout scores are optimistic. The 50 hand-written cases are the more honest test, and 50 is small.
+- **Labels pending human review.** No person has reviewed the training labels yet. A second model and an AI agent proposed 5 corrections ([`data/decisions/review/corrections.jsonl`](data/decisions/review/corrections.jsonl)), and this model was trained with them applied. The charter (DDM-13) says only labels reviewed by named people should retrain the model, and that hasn't happened yet.
+- **Not a safety guarantee.** It still lets through some calls that should be refused. The safety comes from LOKAHI's rules and the checks in plain code. The model is an extra layer.
+- **Different input shape.** The model was trained on short summaries of calls. Through the gate it reads the raw argument values as JSON, and the stated purpose is LOKAHI's own `mcp:<tool>` record. The published numbers don't cover that shift.
+- **Its escalations can't be approved through the gate.** A tier ESCALATE doesn't open an approval window, so a person has to act outside LOKAHI.
+- **Not tested on real agent traffic** or on a public benchmark such as AgentDojo.
+
+**Retrain it.** Training is optional and is the only step that needs third-party packages:
+
+```bash
+python -m pip install "scikit-learn>=1.5" numpy
+python tools/decisions/train.py --corrections data/decisions/review/corrections.jsonl
+python tests/test_decisions.py
+```
+
+`train.py` uses the same 80/20 split and settings each time, writes a new `model.json` and its metrics, and checks that the JSON model matches scikit-learn. Use `--version` to give a retrained model a new number. Leave out `--corrections` to train on the original labels; that reproduces `ddm-0.1.0` ([`docs/decisions/metrics_before_corrections.json`](docs/decisions/metrics_before_corrections.json)). Pickle and joblib files are never used.
+
 ## About the test scenarios and baselines
 
 The 50 scenarios in [`data/LOKAHI_RedTeam_Corpus_v1.0.csv`](data/LOKAHI_RedTeam_Corpus_v1.0.csv) are adapted from scenes in a speculative-fiction duology about AI in public services. Each one is written as a test with an expected decision and reason. Passing all 50 shows the engine behaves as specified on those cases. It doesn't show how LOKAHI performs in the field.
@@ -178,8 +238,12 @@ These run in CI but are research prototypes, separate from the gate:
 | [`tools/lokahi_approve.py`](tools/lokahi_approve.py) | Sign a yes or no for one action |
 | [`examples/`](examples/) | Editorial desk example, a complete manifest and an approvers file |
 | [`tests/test_core.py`](tests/test_core.py) | 70 unit tests |
+| [`tools/decisions/`](tools/decisions/) | Experimental decisions tier: charter rules, pure-Python model, `model.json`, optional `train.py` |
+| [`tests/test_decisions.py`](tests/test_decisions.py) | 32 tests for the decisions tier |
 | [`demo.py`](demo.py) | Engine walkthrough on a municipal water board |
 | [`data/`](data/) | 50-scenario set (CC BY 4.0) and the Ghostproof scenario set |
+| [`data/decisions/`](data/decisions/) | Decisions tier training and test data, schema and data card (CC BY 4.0) |
+| [`docs/decisions/`](docs/decisions/) | Decisions charter, research notes and metrics |
 | [`docs/SPEC.md`](docs/SPEC.md) | Specification: manifest fields, rule order, vote binding, MCP gate |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Notes on taking the reference to production |
 | [`CHANGELOG.md`](CHANGELOG.md) | What changed in each release |
@@ -205,4 +269,4 @@ LOKAHI is the runtime half of a two-stage check. The two companion repositories 
 
 ## License
 
-The software is licensed under [Apache-2.0](LICENSE). The scenario set in `data/` is licensed under [CC BY 4.0](data/LICENSE).
+The software is licensed under [Apache-2.0](LICENSE). The scenario set in `data/` and the decisions data in `data/decisions/` are licensed under [CC BY 4.0](data/LICENSE).
