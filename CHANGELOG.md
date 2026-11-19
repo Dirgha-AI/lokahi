@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — R1 (v1.1)
+
+- **R1-28 tool pinning** (`tools/lokahi_toolpin.py`): signed pin sets record the
+  hash of each tool's approved schema and its manifest policy. `pin`, `verify`
+  and `check-manifest` commands; drift in a catalogue (added/removed/changed
+  schema) and drift in a manifest policy are both reported. The gateway refuses
+  `tool_not_pinned:<name>` and `tool_policy_drift:<name>` when a pin set is in
+  force. CLI: `--tool-pins`, `--require-pins`. 11 tests.
+- **R1-15 evidence packs** (`tools/lokahi_evidence.py`): a self-contained,
+  offline-verifiable bundle per decision. The standalone verifier checks the
+  decision hash, the chain link to the previous entry, the manifest signature,
+  that every approval names the action digest, every approval signature against
+  supplied validator keys, and an optional pack signature. CLI: `build` and
+  `verify`. 10 tests.
+- Ledger entries now record `action_digest` (via `Ledger.append(..., extra=...)`)
+  so evidence packs need no side-channel data. Older entries are unchanged and
+  still verify.
+
 ## Unreleased — planning
 
 - **`ROADMAP.md`** — phased plan to open-source SOTA: competitive parity matrix

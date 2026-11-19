@@ -215,6 +215,24 @@ def _import_failsecure():
         _FAILSECURE_AVAILABLE = (None, None, False)
     return _FAILSECURE_AVAILABLE
 
+
+# Tool pinning (rug-pull defence), imported lazily.
+_TOOLPIN_AVAILABLE = None  # type: ignore[assignment]
+
+
+def _import_toolpin():
+    """Import the tool-pinning helpers lazily."""
+    global _TOOLPIN_AVAILABLE
+    if _TOOLPIN_AVAILABLE is not None:
+        return _TOOLPIN_AVAILABLE
+    try:  # noqa: E402
+        from lokahi_toolpin import check_manifest, verify_pin_set  # noqa: E402
+
+        _TOOLPIN_AVAILABLE = (check_manifest, verify_pin_set, True)
+    except ImportError:  # pragma: no cover
+        _TOOLPIN_AVAILABLE = (None, None, False)
+    return _TOOLPIN_AVAILABLE
+
 # JSON-RPC 2.0 LOKAHI error codes
 JSONRPC_ERR_FORBIDDEN = -32001
 JSONRPC_ERR_ESCALATE = -32002
@@ -334,9 +352,26 @@ class LokahiMCPGateway:
         slm_judge: Optional[SLMJudge] = None,
         consent_framework: Any = None,
         failsecure_endpoint: Optional[str] = None,
+        tool_pins: Optional[dict] = None,
+        require_pins: bool = False,
     ) -> None:
         if signer is None:
             raise GatewayConfigError("a manifest verification key is required; refusing to start without one")
+        # Tool pinning: refuse calls to tools whose policy changed after review.
+        _check_manifest, _verify_pins, _toolpin_available = _import_toolpin()
+        self.tool_pins = tool_pins
+        self._pin_events: list = []
+        if tool_pins is not None:
+            if not _toolpin_available:
+                raise GatewayConfigError(
+                    "tool pins were provided but lokahi_toolpin could not be imported"
+                )
+            try:
+                self._pin_events = _check_manifest(tool_pins, manifest)
+            except Exception as exc:  # noqa: BLE001 - an unreadable pin set must not open the gate
+                self._pin_events = [type("_E", (), {"tool": "<pinset>", "kind": "unreadable", "detail": str(exc)})()]
+        elif require_pins:
+            raise GatewayConfigError("require_pins=True but no tool pin set was provided")
         # Layer 1: WASM deterministic pre-flight.
         if preflight is not None:
             self.preflight = preflight
@@ -415,7 +450,10 @@ class LokahiMCPGateway:
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         msg_id = rpc_msg.get("id") if isinstance(rpc_msg, dict) else None
-        entry = self.ledger.append(decision, action, self.manifest, ts=now)
+        evidence_extra = {}
+        if extra and isinstance(extra.get("action_digest"), str):
+            evidence_extra["action_digest"] = extra["action_digest"]
+        entry = self.ledger.append(decision, action, self.manifest, ts=now, extra=evidence_extra)
         if self.ledger_path:
             append_ledger_line(self.ledger_path, entry)
         data: dict[str, Any] = {
@@ -524,6 +562,26 @@ class LokahiMCPGateway:
                 base,
                 now,
             )
+
+        # ------------------------------------------------------------------
+        # Tool pinning: a tool added to or changed in the manifest after the
+        # catalogue was reviewed is refused; unknown tools are refused when a
+        # pin set is in force.
+        # ------------------------------------------------------------------
+        if self.tool_pins is not None:
+            if self._pin_events:
+                return self._record(
+                    rpc_msg,
+                    Decision(
+                        FORBIDDEN,
+                        [f"tool_policy_drift:{e.tool}" for e in self._pin_events],
+                        actuator_interlock="safe_mechanical_hold",
+                    ),
+                    base,
+                    now,
+                )
+            if tool_name not in self.tool_pins.get("tools", {}):
+                return self._deny(rpc_msg, base, now, [f"tool_not_pinned:{tool_name}"])
 
         # Malformed payloads are refused before any layer sees them, so Layer 1
         # and the final decision always evaluate the same bytes.
@@ -929,6 +987,16 @@ def main(argv: list[str] | None = None) -> int:
         "--webxr-endpoint",
         help="WebXR teleoperation endpoint URL for fail-secure human manual oversight (e.g. wss://webxr.example.com/teleop).",
     )
+    parser.add_argument(
+        "--tool-pins",
+        help="Signed tool pin set (from `lokahi_toolpin.py pin`). Refuses tools whose policy changed after review.",
+    )
+    parser.add_argument(
+        "--require-pins",
+        action="store_true",
+        default=False,
+        help="Require a tool pin set; refuse to start without one (fail closed).",
+    )
     args = parser.parse_args(argv)
 
     if args.self_test or not args.manifest:
@@ -1023,6 +1091,15 @@ def main(argv: list[str] | None = None) -> int:
     elif args.require_consent_framework:
         return refuse("--require-consent-framework set but no --validator-keys provided")
 
+    # Tool pin set (rug-pull defence).
+    tool_pins = None
+    if args.tool_pins:
+        try:
+            with open(args.tool_pins, encoding="utf-8") as f:
+                tool_pins = json.load(f)
+        except (OSError, ValueError) as exc:
+            return refuse(f"cannot read tool pin set: {exc}")
+
     gw = LokahiMCPGateway(
         manifest,
         signer,
@@ -1037,6 +1114,8 @@ def main(argv: list[str] | None = None) -> int:
         slm_judge=slm_judge,
         consent_framework=consent_framework,
         failsecure_endpoint=args.webxr_endpoint,
+        tool_pins=tool_pins,
+        require_pins=args.require_pins,
     )
     for line in sys.stdin:
         line = line.strip()

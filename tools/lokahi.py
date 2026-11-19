@@ -674,7 +674,14 @@ class Ledger:
     def _head(self) -> str:
         return self.entries[-1]["hash"] if self.entries else GENESIS
 
-    def append(self, decision: Decision, action: Action, manifest: Manifest, ts: float | None = None) -> dict:
+    def append(
+        self,
+        decision: Decision,
+        action: Action,
+        manifest: Manifest,
+        ts: float | None = None,
+        extra: dict | None = None,
+    ) -> dict:
         timestamp = int(ts if ts is not None else time.time())
         body = {
             "seq": len(self.entries),
@@ -689,6 +696,11 @@ class Ledger:
             "declared_by": action.declared_by,
             "prev": self._head(),
         }
+        # Optional evidence fields. Absent for v0.1.x entries, which still vary
+        # only by the fields they always had, so old chains keep verifying.
+        for key, value in (extra or {}).items():
+            if key not in body:
+                body[key] = value
         body["hash"] = hashlib.sha256(canonical(body)).hexdigest()
         self.entries.append(body)
         return body

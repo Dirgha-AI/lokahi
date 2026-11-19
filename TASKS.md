@@ -29,7 +29,7 @@ Rule: every task lands with an acceptance test that fails before it.
 - [ ] R1-05 Token exchange (RFC 8693); never pass client tokens upstream
 - [ ] R1-06 `_meta.approval_status` + `input_required` interrupt handling
 - [ ] R1-07 Publish gateway conformance suite (40+ checks) + CI integration
-- [ ] R1-28 Tool-description pinning: schema hash in manifest; drift → refuse
+- [x] R1-28 Tool-description pinning: schema hash in manifest; drift → refuse (`tools/lokahi_toolpin.py`, 11 tests)
 
 ### W2 Identity & authority
 - [ ] R1-08 OIDC-authenticated approvers; WebAuthn/passkey confirm per decision
@@ -43,8 +43,8 @@ Rule: every task lands with an acceptance test that fails before it.
 - [ ] R1-14 Property tests: consent never relaxes a safety refusal
 
 ### W6 Evidence
-- [ ] R1-15 `lokahi evidence <digest>`: offline-verifiable bundle (JSON + PDF)
-- [ ] R1-15b Standalone verifier tool (no LOKAHI install required)
+- [x] R1-15 `lokahi_evidence.py build|verify`: offline-verifiable bundle (6 checks; PDF pending)
+- [x] R1-15b Standalone verifier (`verify` subcommand; stdlib + optional cryptography)
 - [ ] R1-16 S3 Object Lock exporter
 
 ### W7 Observability
@@ -67,6 +67,11 @@ Rule: every task lands with an acceptance test that fails before it.
 ### W10 Assurance
 - [ ] R1-29 60-point enterprise RFP checklist, self-assessed honestly
 - [ ] Book external crypto review #1
+
+### Completed in R1 so far
+- R1-15 evidence packs + standalone verifier (`tests/test_r1_features.py`)
+- R1-28 tool pinning: schema/policy hashes, catalogue drift, gateway refusal
+- Ledger now records `action_digest` so packs need no side data
 
 ### R1 exit gate
 - [ ] p99 < 1 ms (Rust host), p99 API < 25 ms, published with reproduction script
