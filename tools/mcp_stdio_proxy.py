@@ -372,6 +372,7 @@ class LokahiMCPGateway:
         tool_pins: Optional[dict] = None,
         require_pins: bool = False,
         tool_acl: Any = None,
+        telemetry: Any = None,
     ) -> None:
         if signer is None:
             raise GatewayConfigError("a manifest verification key is required; refusing to start without one")
@@ -391,6 +392,7 @@ class LokahiMCPGateway:
         elif require_pins:
             raise GatewayConfigError("require_pins=True but no tool pin set was provided")
         self.tool_acl = tool_acl
+        self.telemetry = telemetry
         # Layer 1: WASM deterministic pre-flight.
         if preflight is not None:
             self.preflight = preflight
@@ -486,6 +488,30 @@ class LokahiMCPGateway:
         }
         if extra:
             data.update(extra)
+        if self.telemetry is not None:
+            try:
+                from lokahi_telemetry import DecisionEvent
+
+                requester = action.requester
+                self.telemetry.emit(
+                    DecisionEvent(
+                        ts=now,
+                        node=self.manifest.node,
+                        tool=action.tool,
+                        verdict=decision.verdict,
+                        reasons=list(decision.reasons),
+                        requester=requester,
+                        quorum_required=decision.quorum_required,
+                        quorum_met=decision.quorum_met,
+                        action_digest=str((extra or {}).get("action_digest", "")),
+                        ledger_seq=int(entry["seq"]),
+                        ledger_hash=str(entry["hash"]),
+                        actuator_interlock=decision.actuator_interlock,
+                        consumer=requester[len("consumer:"):] if requester.startswith("consumer:") else "",
+                    )
+                )
+            except Exception:  # noqa: BLE001 - telemetry must never affect a decision
+                pass
         if decision.verdict == COMPLIANT:
             return {
                 "jsonrpc": "2.0",
@@ -1050,6 +1076,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--oauth-hs256-secret", help="Shared secret for HS256 tokens (local testing only). Or set LOKAHI_OAUTH_HS256_SECRET.")
     parser.add_argument("--oauth-resource", help="Canonical resource URI published in RFC 9728 metadata.")
     parser.add_argument("--tool-acl", help="JSON file mapping consumers to allowed tools (R1-10).")
+    parser.add_argument(
+        "--telemetry", action="store_true", default=False,
+        help="Export decisions to OTLP/SIEM sinks configured by LOKAHI_OTEL_ENDPOINT, "
+             "LOKAHI_SIEM_WEBHOOK, LOKAHI_SPLUNK_HEC_URL/TOKEN, LOKAHI_ELASTIC_URL.",
+    )
     args = parser.parse_args(argv)
 
     if args.self_test or not args.manifest:
@@ -1144,6 +1175,19 @@ def main(argv: list[str] | None = None) -> int:
     elif args.require_consent_framework:
         return refuse("--require-consent-framework set but no --validator-keys provided")
 
+    # Telemetry (opt-in).
+    telemetry = None
+    if args.telemetry:
+        try:
+            from lokahi_telemetry import Telemetry
+
+            telemetry = Telemetry.from_env()
+        except ImportError:
+            telemetry = None
+        if telemetry is None:
+            print("lokahi: warning: --telemetry set but no sink environment variables found",
+                  file=sys.stderr)
+
     # Per-consumer tool ACL.
     tool_acl = None
     if args.tool_acl:
@@ -1181,6 +1225,7 @@ def main(argv: list[str] | None = None) -> int:
         tool_pins=tool_pins,
         require_pins=args.require_pins,
         tool_acl=tool_acl,
+        telemetry=telemetry,
     )
     # Streamable HTTP transport (R1-01), when requested.
     if args.http_listen:
