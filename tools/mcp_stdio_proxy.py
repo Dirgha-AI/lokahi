@@ -373,6 +373,7 @@ class LokahiMCPGateway:
         require_pins: bool = False,
         tool_acl: Any = None,
         telemetry: Any = None,
+        notifier: Any = None,
     ) -> None:
         if signer is None:
             raise GatewayConfigError("a manifest verification key is required; refusing to start without one")
@@ -393,6 +394,7 @@ class LokahiMCPGateway:
             raise GatewayConfigError("require_pins=True but no tool pin set was provided")
         self.tool_acl = tool_acl
         self.telemetry = telemetry
+        self.notifier = notifier
         # Layer 1: WASM deterministic pre-flight.
         if preflight is not None:
             self.preflight = preflight
@@ -488,6 +490,22 @@ class LokahiMCPGateway:
         }
         if extra:
             data.update(extra)
+        if (
+            self.notifier is not None
+            and decision.verdict == ESCALATE
+            and extra
+            and extra.get("action_digest")
+        ):
+            try:
+                self.notifier.notify_pending(
+                    digest=str(extra["action_digest"]),
+                    tool=action.tool,
+                    node=self.manifest.node,
+                    reasons=list(decision.reasons),
+                    now=now,
+                )
+            except Exception:  # noqa: BLE001 - notification must never change a decision
+                pass
         if self.telemetry is not None:
             try:
                 from lokahi_telemetry import DecisionEvent
@@ -1077,6 +1095,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--oauth-resource", help="Canonical resource URI published in RFC 9728 metadata.")
     parser.add_argument("--tool-acl", help="JSON file mapping consumers to allowed tools (R1-10).")
     parser.add_argument(
+        "--notify-config",
+        help="JSON file configuring approval notifications (link key, operators, SMTP/Slack/webhook).",
+    )
+    parser.add_argument(
         "--telemetry", action="store_true", default=False,
         help="Export decisions to OTLP/SIEM sinks configured by LOKAHI_OTEL_ENDPOINT, "
              "LOKAHI_SIEM_WEBHOOK, LOKAHI_SPLUNK_HEC_URL/TOKEN, LOKAHI_ELASTIC_URL.",
@@ -1175,6 +1197,17 @@ def main(argv: list[str] | None = None) -> int:
     elif args.require_consent_framework:
         return refuse("--require-consent-framework set but no --validator-keys provided")
 
+    # Approval notifications (opt-in).
+    notifier = None
+    if args.notify_config:
+        try:
+            from lokahi_notify import Notifier
+
+            with open(args.notify_config, encoding="utf-8") as f:
+                notifier = Notifier.from_config(json.load(f))
+        except (OSError, ValueError, ImportError) as exc:
+            return refuse(f"cannot configure notifications: {exc}")
+
     # Telemetry (opt-in).
     telemetry = None
     if args.telemetry:
@@ -1226,6 +1259,7 @@ def main(argv: list[str] | None = None) -> int:
         require_pins=args.require_pins,
         tool_acl=tool_acl,
         telemetry=telemetry,
+        notifier=notifier,
     )
     # Streamable HTTP transport (R1-01), when requested.
     if args.http_listen:
@@ -1280,6 +1314,7 @@ def main(argv: list[str] | None = None) -> int:
             bearer_tokens=tokens,
             oauth_verifier=oauth_verifier,
             resource_metadata=resource_metadata,
+            approval_link_key=getattr(notifier, "key", None),
         )
         return 0
 

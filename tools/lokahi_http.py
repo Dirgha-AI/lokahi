@@ -51,6 +51,7 @@ def make_handler(
     bearer_tokens: Optional[list[str]] = None,
     oauth_verifier=None,
     resource_metadata=None,
+    approval_link_key: Optional[bytes] = None,
 ):
     """Build a request handler class bound to one gateway.
 
@@ -99,6 +100,60 @@ def make_handler(
         def _json(self, code: int, obj: Any, extra_headers: Optional[dict] = None) -> None:
             self._send(code, _json_bytes(obj), extra_headers=extra_headers)
 
+        def _handle_approve(self) -> None:
+            import json as _json
+
+            if approval_link_key is None:
+                self._json(404, {"error": "approvals_not_configured"})
+                return
+            length = int(self.headers.get("Content-Length", "0") or 0)
+            if length <= 0 or length > MAX_BODY_BYTES:
+                self._json(413, {"error": "body_too_large"})
+                return
+            try:
+                payload = _json.loads(self.rfile.read(length).decode("utf-8"))
+                token = payload["token"]
+                approval = payload["approval"]
+            except (ValueError, KeyError, TypeError):
+                self._json(400, {"error": "expected {token, approval}"})
+                return
+
+            try:
+                from lokahi_notify import parse_link
+
+                parsed = parse_link("", token, approval_link_key)
+            except Exception as exc:  # noqa: BLE001
+                self._json(400, {"error": "bad_link", "detail": str(exc)})
+                return
+
+            if approval.get("operator") != parsed["operator"]:
+                self._json(400, {"error": "operator_mismatch"})
+                return
+            if approval.get("action_digest") != parsed["digest"]:
+                self._json(400, {"error": "digest_mismatch"})
+                return
+            if approval.get("decision") not in ("yes", "no"):
+                self._json(400, {"error": "decision_must_be_yes_or_no"})
+                return
+
+            try:
+                from lokahi import Approval
+
+                record = Approval.from_dict(approval)
+            except (ValueError, TypeError) as exc:
+                self._json(400, {"error": "malformed_approval", "detail": str(exc)})
+                return
+
+            store = getattr(gateway, "approval_store", None)
+            if store is None or not hasattr(store, "add"):
+                self._json(501, {"error": "approval_store_unavailable"})
+                return
+            store.add(record)
+            bump("decisions")
+            self._json(200, {"accepted": True, "operator": record.operator,
+                             "action_digest": record.action_digest,
+                             "decision": record.decision})
+
         def log_message(self, fmt: str, *args: Any) -> None:  # quieter default
             if os.environ.get("LOKAHI_HTTP_VERBOSE"):
                 super().log_message(fmt, *args)
@@ -136,6 +191,38 @@ def make_handler(
             ):
                 self._json(200, resource_metadata.as_dict())
                 return
+            if self.path.startswith("/approve"):
+                if approval_link_key is None:
+                    self._json(404, {"error": "approvals_not_configured"})
+                    return
+                from urllib.parse import parse_qs, urlparse
+
+                token = (parse_qs(urlparse(self.path).query).get("t") or [""])[0]
+                try:
+                    from lokahi_notify import parse_link
+
+                    parsed = parse_link("", token, approval_link_key)
+                except Exception as exc:  # noqa: BLE001
+                    self._json(400, {"error": "bad_link", "detail": str(exc)})
+                    return
+                page = (
+                    "<!doctype html><meta charset=utf-8>"
+                    "<title>LOKAHI approval</title>"
+                    "<body style=\'font-family:system-ui;max-width:44rem;margin:3rem auto\'>"
+                    "<h1>Approval requested</h1>"
+                    f"<p><b>Operator:</b> {parsed['operator']}<br>"
+                    f"<b>Action digest:</b> <code>{parsed['digest']}</code></p>"
+                    "<p>This page authenticates the <i>request</i>. Approving requires your own key:</p>"
+                    f"<pre>python tools/lokahi_approve.py --key-file your.key "
+                    f"--operator {parsed['operator']} --node your-device "
+                    f"--digest {parsed['digest']} --decision yes "
+                    f"--approvals approvals.jsonl</pre>"
+                    "<p>Or POST JSON to this path: "
+                    "<code>{\"token\": \"...\", \"approval\": {...}}</code></p>"
+                    "</body>"
+                )
+                self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+                return
             if self.path == path:
                 self._json(405, {"error": "method_not_allowed",
                                  "detail": "this server does not initiate streams"})
@@ -150,6 +237,9 @@ def make_handler(
             self._json(404, {"error": "not_found"})
 
         def do_POST(self) -> None:  # noqa: N802
+            if self.path.startswith("/approve"):
+                self._handle_approve()
+                return
             if self.path != path:
                 self._json(404, {"error": "not_found"})
                 return
@@ -240,6 +330,7 @@ def build_server(
     bearer_tokens: Optional[list[str]] = None,
     oauth_verifier=None,
     resource_metadata=None,
+    approval_link_key: Optional[bytes] = None,
 ) -> ThreadingHTTPServer:
     """Create (but do not start) a Streamable HTTP server for `gateway`."""
     if not isinstance(port, int) or not (0 <= port < 65536):
@@ -250,6 +341,7 @@ def build_server(
         bearer_tokens=bearer_tokens,
         oauth_verifier=oauth_verifier,
         resource_metadata=resource_metadata,
+        approval_link_key=approval_link_key,
     )
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
@@ -265,6 +357,7 @@ def serve(
     bearer_tokens: Optional[list[str]] = None,
     oauth_verifier=None,
     resource_metadata=None,
+    approval_link_key: Optional[bytes] = None,
 ) -> None:
     """Run until interrupted."""
     server = build_server(
@@ -275,6 +368,7 @@ def serve(
         bearer_tokens=bearer_tokens,
         oauth_verifier=oauth_verifier,
         resource_metadata=resource_metadata,
+        approval_link_key=approval_link_key,
     )
     try:
         print(f"lokahi: listening on http://{host}:{port}{path}", flush=True)
