@@ -193,3 +193,25 @@ Rule: every task lands with an acceptance test that fails before it.
 - v0.1.2 core, v0.1.3 trust-boundary hardening, v0.1.4 decisions tier (upstream)
 - v1.0.0 cascade: WASM pre-flight, SLM tier, Ed25519 consent, fail-secure + WebXR
 - v1.0.1 audit remediation: 4 critical, 3 high, 8 medium, 21 regression tests
+
+---
+
+## SESSION PLAN — autonomous R1 execution (no interruptions)
+
+Order of work, each with tests and a commit:
+
+1. R1-02 OAuth 2.1 resource server: PRM (RFC 9728), JWT verify (RS256/ES256/HS256), `iss`, `aud`, exp/nbf, JWKS cache, WWW-Authenticate
+2. R1-17/R1-18 telemetry: OTLP/HTTP JSON spans + events; webhook, Splunk HEC, Elastic sinks; async, fail-open
+3. R1-20 approval inbox: signed links, SMTP/Slack/console notifiers, `/approve` endpoint that still requires the operator's own signature
+4. R1-10 tool ACLs per consumer (token subject or configured requester)
+5. R1-07 conformance suite (stdio + HTTP, published checks)
+6. R1-26 deployment: Dockerfile, compose, Helm chart, GitHub Action
+7. R1-27 policy packs: utility, hospital, editorial + validation tests
+8. R1-13/R1-14 fuzz targets + property tests
+9. R1-22 docs: quickstart, concepts
+10. R1-29 enterprise RFP checklist
+11. Version 1.1.0, changelog, tag
+
+Explicitly deferred to R2/R3 (not fakeable in one session): Rust host (R1-12),
+token exchange (R1-05), full conformance against vendor servers, SOC 2, HA,
+multi-tenancy, FROST, ROS 2.

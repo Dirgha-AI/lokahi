@@ -44,12 +44,23 @@ def _json_bytes(obj: Any) -> bytes:
     return json.dumps(obj, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
-def make_handler(gateway, *, path: str = DEFAULT_PATH, bearer_tokens: Optional[list[str]] = None):
+def make_handler(
+    gateway,
+    *,
+    path: str = DEFAULT_PATH,
+    bearer_tokens: Optional[list[str]] = None,
+    oauth_verifier=None,
+    resource_metadata=None,
+):
     """Build a request handler class bound to one gateway.
 
-    `bearer_tokens`, when set, is the allowlist of accepted ``Authorization:
-    Bearer`` values. This is a stop-gap until OAuth 2.1 resource-server support
-    (R1-02); an empty list means the transport must not be exposed publicly.
+    `oauth_verifier`, when supplied, validates bearer JWTs (R1-02) and supplies
+    the consumer identity for tool ACLs. `resource_metadata` is a
+    `ResourceMetadata` used both for `/.well-known/oauth-protected-resource` and
+    for the `WWW-Authenticate` challenge on 401.
+
+    `bearer_tokens`, when set, is a static allowlist used only when no OAuth
+    verifier is configured.
     """
     tokens = set(bearer_tokens or [])
     decision_lock = threading.Lock()
@@ -66,19 +77,27 @@ def make_handler(gateway, *, path: str = DEFAULT_PATH, bearer_tokens: Optional[l
         protocol_version = "HTTP/1.1"
 
         # -- helpers ---------------------------------------------------
-        def _send(self, code: int, body: bytes, content_type: str = "application/json") -> None:
+        def _send(
+            self,
+            code: int,
+            body: bytes,
+            content_type: str = "application/json",
+            extra_headers: Optional[dict] = None,
+        ) -> None:
             self.send_response(code)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            for name, value in (extra_headers or {}).items():
+                self.send_header(name, value)
             self.end_headers()
             try:
                 self.wfile.write(body)
             except BrokenPipeError:  # client hung up
                 pass
 
-        def _json(self, code: int, obj: Any) -> None:
-            self._send(code, _json_bytes(obj))
+        def _json(self, code: int, obj: Any, extra_headers: Optional[dict] = None) -> None:
+            self._send(code, _json_bytes(obj), extra_headers=extra_headers)
 
         def log_message(self, fmt: str, *args: Any) -> None:  # quieter default
             if os.environ.get("LOKAHI_HTTP_VERBOSE"):
@@ -111,6 +130,12 @@ def make_handler(gateway, *, path: str = DEFAULT_PATH, bearer_tokens: Optional[l
                 lines.append(f"lokahi_uptime_seconds {int(time.time() - started_at)}")
                 self._send(200, ("\n".join(lines) + "\n").encode(), "text/plain; version=0.0.4")
                 return
+            if resource_metadata is not None and self.path in (
+                "/.well-known/oauth-protected-resource",
+                f"/.well-known/oauth-protected-resource{path}",
+            ):
+                self._json(200, resource_metadata.as_dict())
+                return
             if self.path == path:
                 self._json(405, {"error": "method_not_allowed",
                                  "detail": "this server does not initiate streams"})
@@ -130,7 +155,24 @@ def make_handler(gateway, *, path: str = DEFAULT_PATH, bearer_tokens: Optional[l
                 return
             bump("requests")
 
-            if not self._authorized():
+            consumer = None
+            if oauth_verifier is not None:
+                try:
+                    claims = oauth_verifier.verify(self.headers.get("Authorization", ""))
+                    consumer = claims.client_id
+                except Exception as exc:  # noqa: BLE001 - any failure is a 401
+                    bump("auth_failures")
+                    headers = {}
+                    if resource_metadata is not None:
+                        headers["WWW-Authenticate"] = resource_metadata.www_authenticate()
+                    reason = getattr(exc, "reason", "unauthorized")
+                    self._json(
+                        401,
+                        {"error": "unauthorized", "reason": reason},
+                        extra_headers=headers,
+                    )
+                    return
+            elif not self._authorized():
                 bump("auth_failures")
                 self._json(401, {"error": "unauthorized"})
                 return
@@ -164,7 +206,10 @@ def make_handler(gateway, *, path: str = DEFAULT_PATH, bearer_tokens: Optional[l
 
             try:
                 with decision_lock:
-                    result = gateway.intercept(message)
+                    if consumer is None:
+                        result = gateway.intercept(message)
+                    else:
+                        result = gateway.intercept(message, consumer=consumer)
             except Exception as exc:  # noqa: BLE001 - the gateway already handles its own errors
                 bump("errors")
                 self._json(500, {"error": "gateway_failure", "detail": type(exc).__name__})
@@ -193,20 +238,44 @@ def build_server(
     *,
     path: str = DEFAULT_PATH,
     bearer_tokens: Optional[list[str]] = None,
+    oauth_verifier=None,
+    resource_metadata=None,
 ) -> ThreadingHTTPServer:
     """Create (but do not start) a Streamable HTTP server for `gateway`."""
     if not isinstance(port, int) or not (0 <= port < 65536):
         raise HttpTransportError(f"invalid port: {port!r}")
-    handler = make_handler(gateway, path=path, bearer_tokens=bearer_tokens)
+    handler = make_handler(
+        gateway,
+        path=path,
+        bearer_tokens=bearer_tokens,
+        oauth_verifier=oauth_verifier,
+        resource_metadata=resource_metadata,
+    )
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
     return server
 
 
-def serve(gateway, host: str, port: int, *, path: str = DEFAULT_PATH,
-          bearer_tokens: Optional[list[str]] = None) -> None:
+def serve(
+    gateway,
+    host: str,
+    port: int,
+    *,
+    path: str = DEFAULT_PATH,
+    bearer_tokens: Optional[list[str]] = None,
+    oauth_verifier=None,
+    resource_metadata=None,
+) -> None:
     """Run until interrupted."""
-    server = build_server(gateway, host, port, path=path, bearer_tokens=bearer_tokens)
+    server = build_server(
+        gateway,
+        host,
+        port,
+        path=path,
+        bearer_tokens=bearer_tokens,
+        oauth_verifier=oauth_verifier,
+        resource_metadata=resource_metadata,
+    )
     try:
         print(f"lokahi: listening on http://{host}:{port}{path}", flush=True)
         server.serve_forever()

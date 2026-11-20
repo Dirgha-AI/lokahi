@@ -468,5 +468,268 @@ class TestHttpFailSecure(unittest.TestCase):
             server.server_close()
 
 
+# ---------------------------------------------------------------------------
+# R1-02 OAuth 2.1 resource server
+# ---------------------------------------------------------------------------
+
+def _b64(data: bytes) -> str:
+    import base64
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _make_jwt(claims, *, key, alg="RS256", kid="kid-1"):
+    import json as _json
+    header = {"alg": alg, "typ": "JWT", "kid": kid}
+    signing_input = (_b64(_json.dumps(header).encode()) + "." + _b64(_json.dumps(claims).encode())).encode()
+    if alg == "HS256":
+        import hashlib
+        import hmac
+        signature = hmac.new(key, signing_input, hashlib.sha256).digest()
+    elif alg == "RS256":
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import padding
+        signature = key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
+    elif alg == "ES256":
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+        der = key.sign(signing_input, ec.ECDSA(hashes.SHA256()))
+        r, s = decode_dss_signature(der)
+        signature = r.to_bytes(32, "big") + s.to_bytes(32, "big")
+    else:
+        signature = b""
+    return signing_input.decode() + "." + _b64(signature)
+
+
+@unittest.skipUnless(__import__("importlib").util.find_spec("cryptography"), "cryptography not installed")
+class TestOAuthVerifier(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import time
+
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        cls.rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        cls.now = int(time.time())
+        cls.issuer = "https://idp.example/realms/water"
+        cls.audience = "https://lokahi.example/mcp"
+
+    def _claims(self, **over):
+        base = {
+            "iss": self.issuer,
+            "aud": self.audience,
+            "sub": "user:alice",
+            "client_id": "team:water-ops",
+            "exp": self.now + 300,
+            "nbf": self.now - 5,
+        }
+        base.update(over)
+        return base
+
+    def _verifier(self, **kw):
+        from lokahi_oauth import JWTVerifier
+
+        return JWTVerifier(issuers=[self.issuer], audience=self.audience, **kw)
+
+    def test_valid_rs256_token(self):
+        token = _make_jwt(self._claims(), key=self.rsa_key)
+        # Inject the public key directly to avoid a network JWKS fetch.
+        v = self._verifier(algorithms=["RS256"])
+        v.jwks = type("J", (), {"get": staticmethod(lambda kid: self.rsa_key.public_key())})()
+        claims = v.verify_token(token)
+        self.assertEqual(claims.subject, "user:alice")
+        self.assertEqual(claims.client_id, "team:water-ops")
+
+    def test_expired_token(self):
+        token = _make_jwt(self._claims(exp=self.now - 60), key=self.rsa_key)
+        v = self._verifier(algorithms=["RS256"])
+        v.jwks = type("J", (), {"get": staticmethod(lambda kid: self.rsa_key.public_key())})()
+        from lokahi_oauth import OAuthError
+        with self.assertRaises(OAuthError) as ctx:
+            v.verify_token(token)
+        self.assertEqual(ctx.exception.reason, "token_expired")
+
+    def test_wrong_audience(self):
+        token = _make_jwt(self._claims(aud="https://other.example"), key=self.rsa_key)
+        v = self._verifier(algorithms=["RS256"])
+        v.jwks = type("J", (), {"get": staticmethod(lambda kid: self.rsa_key.public_key())})()
+        from lokahi_oauth import OAuthError
+        with self.assertRaises(OAuthError) as ctx:
+            v.verify_token(token)
+        self.assertEqual(ctx.exception.reason, "bad_audience")
+
+    def test_wrong_issuer(self):
+        token = _make_jwt(self._claims(iss="https://evil.example"), key=self.rsa_key)
+        v = self._verifier(algorithms=["RS256"])
+        v.jwks = type("J", (), {"get": staticmethod(lambda kid: self.rsa_key.public_key())})()
+        from lokahi_oauth import OAuthError
+        with self.assertRaises(OAuthError) as ctx:
+            v.verify_token(token)
+        self.assertEqual(ctx.exception.reason, "bad_issuer")
+
+    def test_alg_none_rejected(self):
+        token = _make_jwt(self._claims(), key=b"", alg="none")
+        v = self._verifier(algorithms=["RS256"])
+        from lokahi_oauth import OAuthError
+        with self.assertRaises(OAuthError) as ctx:
+            v.verify_token(token)
+        self.assertEqual(ctx.exception.reason, "algorithm_not_allowed")
+
+    def test_algorithm_not_in_allowlist(self):
+        secret = b"shared-secret-0123456789"
+        token = _make_jwt(self._claims(), key=secret, alg="HS256")
+        v = self._verifier(algorithms=["RS256"])
+        v.jwks = type("J", (), {"get": staticmethod(lambda kid: self.rsa_key.public_key())})()
+        from lokahi_oauth import OAuthError
+        with self.assertRaises(OAuthError) as ctx:
+            v.verify_token(token)
+        self.assertEqual(ctx.exception.reason, "algorithm_not_allowed")
+
+    def test_hs256_roundtrip(self):
+        secret = b"shared-secret-0123456789"
+        token = _make_jwt(self._claims(), key=secret, alg="HS256")
+        v = self._verifier(algorithms=["HS256"], hs256_secret=secret)
+        self.assertEqual(v.verify_token(token).subject, "user:alice")
+
+    def test_tampered_signature(self):
+        token = _make_jwt(self._claims(), key=self.rsa_key)
+        head, payload, sig = token.split(".")
+        tampered = head + "." + payload + "." + ("A" * len(sig))
+        v = self._verifier(algorithms=["RS256"])
+        v.jwks = type("J", (), {"get": staticmethod(lambda kid: self.rsa_key.public_key())})()
+        from lokahi_oauth import OAuthError
+        with self.assertRaises(OAuthError):
+            v.verify_token(tampered)
+
+
+@unittest.skipUnless(__import__("importlib").util.find_spec("cryptography"), "cryptography not installed")
+class TestOAuthOverHttp(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        import time
+
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from lokahi_http import build_server
+        from lokahi_oauth import JWTVerifier, ResourceMetadata
+
+        cls.rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        cls.now = int(time.time())
+        cls.issuer = "https://idp.example/realms/water"
+        cls.audience = "https://lokahi.example/mcp"
+        verifier = JWTVerifier(issuers=[cls.issuer], audience=cls.audience, algorithms=["RS256"])
+        verifier.jwks = type("J", (), {"get": staticmethod(lambda kid: cls.rsa_key.public_key())})()
+
+        signer = Signer(KEY)
+        cls.gw = LokahiMCPGateway(_manifest(signer), signer, approvers={}, approval_store=ApprovalStore())
+        cls.server = build_server(
+            cls.gw, "127.0.0.1", 0,
+            oauth_verifier=verifier,
+            resource_metadata=ResourceMetadata(
+                resource=cls.audience, authorization_servers=[cls.issuer]
+            ),
+        )
+        cls.port = cls.server.server_address[1]
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def _claims(self, **over):
+        base = {"iss": self.issuer, "aud": self.audience, "sub": "user:alice",
+                "exp": self.now + 300, "nbf": self.now - 5}
+        base.update(over)
+        return base
+
+    def _post(self, body, token=None):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        conn.request("POST", "/mcp", json.dumps(body), headers)
+        response = conn.getresponse()
+        payload = response.read().decode()
+        headers_out = dict(response.getheaders())
+        conn.close()
+        return response.status, payload, headers_out
+
+    def test_metadata_endpoint(self):
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/.well-known/oauth-protected-resource")
+        response = conn.getresponse()
+        doc = json.loads(response.read().decode())
+        conn.close()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(doc["resource"], self.audience)
+        self.assertEqual(doc["authorization_servers"], [self.issuer])
+
+    def test_missing_token_is_401_with_challenge(self):
+        status, _, headers = self._post(_call("read_meter", {"meter_id": "M-1"}))
+        self.assertEqual(status, 401)
+        self.assertIn("WWW-Authenticate", headers)
+        self.assertIn("resource_metadata=", headers["WWW-Authenticate"])
+
+    def test_valid_token_allows(self):
+        token = _make_jwt(self._claims(), key=self.rsa_key)
+        status, body, _ = self._post(_call("read_meter", {"meter_id": "M-1"}), token=token)
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["allowed"])
+
+    def test_expired_token_rejected(self):
+        token = _make_jwt(self._claims(exp=self.now - 60), key=self.rsa_key)
+        status, body, _ = self._post(_call("read_meter", {"meter_id": "M-1"}), token=token)
+        self.assertEqual(status, 401)
+        self.assertEqual(json.loads(body)["reason"], "token_expired")
+
+    def test_consumer_identity_reaches_ledger(self):
+        token = _make_jwt(self._claims(client_id="team:water-ops"), key=self.rsa_key)
+        self._post(_call("read_meter", {"meter_id": "M-1"}), token=token)
+        self.assertEqual(self.gw.ledger.entries[-1]["requester"], "consumer:team:water-ops")
+
+
+# ---------------------------------------------------------------------------
+# R1-10 per-consumer tool ACL
+# ---------------------------------------------------------------------------
+
+class TestToolACL(unittest.TestCase):
+    def test_exact_and_wildcard(self):
+        from lokahi_acl import ToolACL
+        acl = ToolACL.from_dict({
+            "default": "deny",
+            "consumers": {
+                "team:a": {"allow": ["read_meter"]},
+                "team:b": {"allow": ["read_*"]},
+                "team:c": {"allow": ["read_meter", "email_author"], "deny": ["email_*"]},
+            },
+        })
+        self.assertTrue(acl.allows("team:a", "read_meter"))
+        self.assertFalse(acl.allows("team:a", "email_author"))
+        self.assertTrue(acl.allows("team:b", "read_meter"))
+        self.assertFalse(acl.allows("team:c", "email_author"))
+        self.assertFalse(acl.allows("team:unknown", "read_meter"))
+
+    def test_default_allow(self):
+        from lokahi_acl import ToolACL
+        acl = ToolACL.from_dict({"default": "allow", "consumers": {"team:a": {"deny": ["read_meter"]}}})
+        self.assertTrue(acl.allows("team:z", "read_meter"))
+        self.assertFalse(acl.allows("team:a", "read_meter"))
+
+    def test_gateway_denies_by_consumer(self):
+        from lokahi_acl import ToolACL
+        signer = Signer(KEY)
+        acl = ToolACL.from_dict({"default": "deny", "consumers": {"team:a": {"allow": ["read_meter"]}}})
+        gw = LokahiMCPGateway(_manifest(signer), signer, approvers={}, approval_store=ApprovalStore(),
+                              tool_acl=acl)
+        ok = gw.intercept(_call("read_meter", {"meter_id": "M-1"}), now=NOW, consumer="team:a")
+        self.assertTrue(ok.get("allowed"), ok)
+        denied = gw.intercept(_call("email_author", {"meter_id": "M-1"}), now=NOW, consumer="team:a")
+        self.assertFalse(denied.get("allowed"))
+        self.assertIn("tool_acl_denied:team:a:email_author", denied["error"]["data"]["reasons"])
+
+
 if __name__ == "__main__":
     unittest.main()

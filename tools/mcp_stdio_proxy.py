@@ -216,6 +216,23 @@ def _import_failsecure():
     return _FAILSECURE_AVAILABLE
 
 
+# Per-consumer tool ACL, imported lazily.
+_ACL_AVAILABLE = None  # type: ignore[assignment]
+
+
+def _import_acl():
+    global _ACL_AVAILABLE
+    if _ACL_AVAILABLE is not None:
+        return _ACL_AVAILABLE
+    try:  # noqa: E402
+        from lokahi_acl import ToolACL  # noqa: E402
+
+        _ACL_AVAILABLE = (ToolACL, True)
+    except ImportError:  # pragma: no cover
+        _ACL_AVAILABLE = (None, False)
+    return _ACL_AVAILABLE
+
+
 # Tool pinning (rug-pull defence), imported lazily.
 _TOOLPIN_AVAILABLE = None  # type: ignore[assignment]
 
@@ -354,6 +371,7 @@ class LokahiMCPGateway:
         failsecure_endpoint: Optional[str] = None,
         tool_pins: Optional[dict] = None,
         require_pins: bool = False,
+        tool_acl: Any = None,
     ) -> None:
         if signer is None:
             raise GatewayConfigError("a manifest verification key is required; refusing to start without one")
@@ -372,6 +390,7 @@ class LokahiMCPGateway:
                 self._pin_events = [type("_E", (), {"tool": "<pinset>", "kind": "unreadable", "detail": str(exc)})()]
         elif require_pins:
             raise GatewayConfigError("require_pins=True but no tool pin set was provided")
+        self.tool_acl = tool_acl
         # Layer 1: WASM deterministic pre-flight.
         if preflight is not None:
             self.preflight = preflight
@@ -491,7 +510,12 @@ class LokahiMCPGateway:
         return self._record(rpc_msg, Decision(FORBIDDEN, reasons, actuator_interlock=self._hold), action, now)
 
     # ------------------------------------------------------------------
-    def intercept(self, rpc_msg: dict[str, Any], now: float | None = None) -> dict[str, Any]:
+    def intercept(
+        self,
+        rpc_msg: dict[str, Any],
+        now: float | None = None,
+        consumer: str | None = None,
+    ) -> dict[str, Any]:
         """Decide one JSON-RPC 2.0 request. Non-`tools/call` methods pass through.
 
         All layer logic is wrapped in a fail-secure exception boundary: any
@@ -506,7 +530,7 @@ class LokahiMCPGateway:
         now = now if now is not None else time.time()
 
         try:
-            return self._intercept_inner(rpc_msg, now)
+            return self._intercept_inner(rpc_msg, now, consumer)
         except Exception as exc:  # noqa: BLE001 - fail closed on any cascade exception
             if self.failsecure is not None:
                 decision = self.failsecure.handle_exception(exc, "cascade")
@@ -530,15 +554,18 @@ class LokahiMCPGateway:
             raise
 
     # ------------------------------------------------------------------
-    def _intercept_inner(self, rpc_msg: dict[str, Any], now: float) -> dict[str, Any]:
+    def _intercept_inner(
+        self, rpc_msg: dict[str, Any], now: float, consumer: str | None = None
+    ) -> dict[str, Any]:
         """Inner intercept logic: all cascade layers. May raise on failure."""
         params = rpc_msg.get("params")
         params = params if isinstance(params, dict) else {}
         raw_name = params.get("name")
         tool_name = raw_name if isinstance(raw_name, str) and raw_name else "unknown_tool"
         arguments = params.get("arguments", {})
+        requester = f"consumer:{consumer}" if consumer else self.default_requester
         base = Action(
-            requester=self.default_requester,
+            requester=requester,
             tool=tool_name,
             features=[],
             jurisdiction=self.manifest.jurisdiction,
@@ -562,6 +589,17 @@ class LokahiMCPGateway:
                 base,
                 now,
             )
+
+        # ------------------------------------------------------------------
+        # Per-consumer tool ACL: the manifest says what a tool is, the ACL says
+        # who may reach it. Both must permit the call.
+        # ------------------------------------------------------------------
+        if self.tool_acl is not None:
+            if not self.tool_acl.allows(consumer or self.default_requester, tool_name):
+                return self._deny(
+                    rpc_msg, base, now,
+                    [f"tool_acl_denied:{consumer or self.default_requester}:{tool_name}"],
+                )
 
         # ------------------------------------------------------------------
         # Tool pinning: a tool added to or changed in the manifest after the
@@ -661,7 +699,7 @@ class LokahiMCPGateway:
             physical_params = {k: arguments[k] for k in sorted(PHYSICAL_PARAM_KEYS) if k in arguments} or None
 
         action = Action(
-            requester=self.default_requester,
+            requester=requester,
             tool=tool_name,
             features=features,
             jurisdiction=policy.get("jurisdiction", self.manifest.jurisdiction),
@@ -1003,8 +1041,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--http-token",
-        help="Comma-separated bearer token allowlist for HTTP. Required for non-loopback addresses. Or set LOKAHI_HTTP_TOKEN.",
+        help="Comma-separated bearer token allowlist for HTTP. Static stop-gap; prefer --oauth-*. Or set LOKAHI_HTTP_TOKEN.",
     )
+    parser.add_argument("--oauth-issuer", help="Comma-separated accepted token issuers (iss).")
+    parser.add_argument("--oauth-audience", help="Required token audience; normally the gateway resource URI.")
+    parser.add_argument("--oauth-jwks", help="JWKS URL for RS256/ES256 token verification.")
+    parser.add_argument("--oauth-alg", default="RS256,ES256", help="Comma-separated algorithm allowlist.")
+    parser.add_argument("--oauth-hs256-secret", help="Shared secret for HS256 tokens (local testing only). Or set LOKAHI_OAUTH_HS256_SECRET.")
+    parser.add_argument("--oauth-resource", help="Canonical resource URI published in RFC 9728 metadata.")
+    parser.add_argument("--tool-acl", help="JSON file mapping consumers to allowed tools (R1-10).")
     args = parser.parse_args(argv)
 
     if args.self_test or not args.manifest:
@@ -1099,6 +1144,17 @@ def main(argv: list[str] | None = None) -> int:
     elif args.require_consent_framework:
         return refuse("--require-consent-framework set but no --validator-keys provided")
 
+    # Per-consumer tool ACL.
+    tool_acl = None
+    if args.tool_acl:
+        _ToolACL, _acl_available = _import_acl()
+        if not _acl_available:
+            return refuse("tool ACL support unavailable")
+        try:
+            tool_acl = _ToolACL.load(args.tool_acl)
+        except (OSError, ValueError) as exc:
+            return refuse(f"cannot load tool ACL: {exc}")
+
     # Tool pin set (rug-pull defence).
     tool_pins = None
     if args.tool_pins:
@@ -1124,6 +1180,7 @@ def main(argv: list[str] | None = None) -> int:
         failsecure_endpoint=args.webxr_endpoint,
         tool_pins=tool_pins,
         require_pins=args.require_pins,
+        tool_acl=tool_acl,
     )
     # Streamable HTTP transport (R1-01), when requested.
     if args.http_listen:
@@ -1138,13 +1195,47 @@ def main(argv: list[str] | None = None) -> int:
 
         raw_tokens = args.http_token or os.environ.get("LOKAHI_HTTP_TOKEN") or ""
         tokens = [t.strip() for t in raw_tokens.split(",") if t.strip()]
+
+        oauth_verifier = None
+        resource_metadata = None
+        issuers = [i.strip() for i in (args.oauth_issuer or "").split(",") if i.strip()]
+        if issuers or args.oauth_audience or args.oauth_jwks:
+            if not (issuers and args.oauth_audience):
+                return refuse("OAuth requires both --oauth-issuer and --oauth-audience")
+            resource = args.oauth_resource or f"http://{host}:{port}"
+            secret = args.oauth_hs256_secret or os.environ.get("LOKAHI_OAUTH_HS256_SECRET")
+            algorithms = [a.strip() for a in (args.oauth_alg or "").split(",") if a.strip()]
+            try:
+                from lokahi_oauth import JWTVerifier, ResourceMetadata
+
+                oauth_verifier = JWTVerifier(
+                    issuers=issuers,
+                    audience=args.oauth_audience,
+                    algorithms=algorithms or None,
+                    jwks_url=args.oauth_jwks,
+                    hs256_secret=secret.encode("utf-8") if secret else None,
+                )
+                resource_metadata = ResourceMetadata(
+                    resource=resource,
+                    authorization_servers=list(issuers),
+                )
+            except (ImportError, ValueError) as exc:
+                return refuse(f"cannot configure OAuth: {exc}")
+
         loopback = host in ("127.0.0.1", "localhost", "::1")
-        if not loopback and not tokens:
+        if not loopback and not tokens and oauth_verifier is None:
             return refuse(
                 "refusing to listen on a non-loopback address without --http-token "
-                "(OAuth 2.1 resource-server support is not implemented yet)"
+                "or OAuth configuration"
             )
-        serve(gw, host, port, bearer_tokens=tokens)
+        serve(
+            gw,
+            host,
+            port,
+            bearer_tokens=tokens,
+            oauth_verifier=oauth_verifier,
+            resource_metadata=resource_metadata,
+        )
         return 0
 
     for line in sys.stdin:
