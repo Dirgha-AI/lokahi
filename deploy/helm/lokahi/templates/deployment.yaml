@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lokahi.fullname" . }}
+  labels:
+    {{- include "lokahi.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: {{ .Values.strategy.type }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "lokahi.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Values.manifest.existingConfigMap | sha256sum }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: lokahi
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - --manifest=/config/{{ .Values.manifest.configMapKey }}
+            - --key-file=/secrets/{{ .Values.manifest.secretKey }}
+            - --http-listen=0.0.0.0:{{ .Values.service.port }}
+            - --ledger=/var/lib/lokahi/ledger.jsonl
+            - --require-preflight
+            {{- if .Values.approvers.existingConfigMap }}
+            - --validator-keys=/config/{{ .Values.approvers.key }}
+            {{- end }}
+            {{- if .Values.toolPins.existingConfigMap }}
+            - --tool-pins=/config/{{ .Values.toolPins.key }}
+            {{- end }}
+            {{- if .Values.toolAcl.existingConfigMap }}
+            - --tool-acl=/config/{{ .Values.toolAcl.key }}
+            {{- end }}
+            {{- if .Values.oauth.enabled }}
+            - --oauth-issuer={{ .Values.oauth.issuer }}
+            - --oauth-audience={{ .Values.oauth.audience }}
+            - --oauth-jwks={{ .Values.oauth.jwks }}
+            {{- end }}
+            {{- if .Values.telemetry.enabled }}
+            - --telemetry
+            {{- end }}
+          env:
+            {{- if or .Values.oauth.enabled .Values.httpToken }}
+            - name: LOKAHI_HTTP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "lokahi.fullname" . }}-http
+                  key: token
+                  optional: true
+            {{- end }}
+            {{- if .Values.telemetry.enabled }}
+            - name: LOKAHI_OTEL_ENDPOINT
+              value: {{ .Values.telemetry.otelEndpoint | quote }}
+            - name: LOKAHI_SIEM_WEBHOOK
+              value: {{ .Values.telemetry.siemWebhook | quote }}
+            - name: LOKAHI_SPLUNK_HEC_URL
+              value: {{ .Values.telemetry.splunkHecUrl | quote }}
+            - name: LOKAHI_SPLUNK_HEC_TOKEN
+              value: {{ .Values.telemetry.splunkHecToken | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+            {{- if .Values.persistence.enabled }}
+            - name: ledger
+              mountPath: /var/lib/lokahi
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Values.manifest.existingConfigMap }}
+        - name: secrets
+          secret:
+            secretName: {{ .Values.manifest.existingSecret }}
+        {{- if .Values.persistence.enabled }}
+        - name: ledger
+          persistentVolumeClaim:
+            claimName: {{ include "lokahi.fullname" . }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,76 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/dirgha-ai/lokahi
+  tag: "1.1.0"
+  pullPolicy: IfNotPresent
+
+# The gateway holds state (approval windows, ledger). Keep one writer per
+# ledger volume until R2's shared-ledger work lands.
+strategy:
+  type: Recreate
+
+service:
+  type: ClusterIP
+  port: 8787
+
+# Existing manifest / policy material. Create these out of band:
+#   kubectl create configmap lokahi-config --from-file=manifest.json
+#   kubectl create secret generic lokahi-keys --from-file=manifest.key
+manifest:
+  existingConfigMap: lokahi-config
+  configMapKey: manifest.json
+  existingSecret: lokahi-keys
+  secretKey: manifest.key
+
+# Optional material; leave empty to omit the flag.
+toolPins:
+  existingConfigMap: ""
+  key: toolpins.json
+approvers:
+  existingConfigMap: ""
+  key: approvers.json
+toolAcl:
+  existingConfigMap: ""
+  key: tool-acl.json
+
+oauth:
+  enabled: false
+  issuer: ""
+  audience: ""
+  jwks: ""
+
+telemetry:
+  enabled: false
+  otelEndpoint: ""
+  siemWebhook: ""
+  splunkHecUrl: ""
+  splunkHecToken: ""
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

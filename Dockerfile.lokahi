@@ -1,0 +1,40 @@
+# LOKAHI gateway image.
+# Stage 1 builds the WASM pre-flight kernel; stage 2 is the runtime.
+
+FROM rust:1-slim AS wasm
+WORKDIR /build
+COPY tools/wasm_preflight ./wasm_preflight
+RUN rustup target add wasm32-unknown-unknown \
+ && cd wasm_preflight \
+ && cargo build --target wasm32-unknown-unknown --release
+
+FROM python:3.12-slim AS runtime
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    LOKAHI_LEDGER_FSYNC=1
+
+RUN useradd --create-home --uid 10001 lokahi
+WORKDIR /app
+
+COPY pyproject.toml README.md LICENSE ./
+COPY tools ./tools
+COPY examples ./examples
+COPY docs ./docs
+COPY policies ./policies 2>/dev/null || true
+
+# Install runtime deps only (no optional SLM backends in the base image).
+RUN pip install --no-cache-dir "cryptography>=42.0" "wasmtime>=15.0" \
+ && pip install --no-cache-dir --no-deps .
+
+COPY --from=wasm /build/wasm_preflight/target/wasm32-unknown-unknown/release/lokahi_wasm_preflight.wasm \
+     /app/tools/wasm_preflight/preflight.wasm
+
+USER lokahi
+EXPOSE 8787
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/healthz', timeout=2).status==200 else 1)"
+
+# Bind loopback by default; compose/Helm set 0.0.0.0 behind a proxy.
+ENTRYPOINT ["python", "tools/mcp_stdio_proxy.py"]
+CMD ["--help"]

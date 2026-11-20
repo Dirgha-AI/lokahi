@@ -1,0 +1,44 @@
+services:
+  lokahi:
+    build:
+      context: .
+      dockerfile: Dockerfile.lokahi
+    image: lokahi:local
+    command:
+      - --manifest=/config/manifest.json
+      - --key-file=/run/secrets/manifest.key
+      - --http-listen=0.0.0.0:8787
+      - --http-token=${LOKAHI_HTTP_TOKEN:?set LOKAHI_HTTP_TOKEN}
+      - --validator-keys=/config/approvers.json
+      - --tool-pins=/config/toolpins.json
+      - --tool-acl=/config/tool-acl.json
+      - --preflight-wasm=/app/tools/wasm_preflight/preflight.wasm
+      - --require-preflight
+      - --ledger=/var/lib/lokahi/ledger.jsonl
+      - --telemetry
+    environment:
+      LOKAHI_OTEL_ENDPOINT: ${LOKAHI_OTEL_ENDPOINT:-}
+      LOKAHI_SIEM_WEBHOOK: ${LOKAHI_SIEM_WEBHOOK:-}
+      LOKAHI_LEDGER_FSYNC: "1"
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ./examples:/config:ro
+      - lokahi-ledger:/var/lib/lokahi
+    secrets:
+      - manifest.key
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+volumes:
+  lokahi-ledger:
+
+secrets:
+  manifest.key:
+    file: ./manifest.key
