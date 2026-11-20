@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — R1 (v1.1)
+## v1.1.0 (2026-11-20): parity release
+
+### Parity work in this release
 
 - **R1-01 Streamable HTTP transport** (`tools/lokahi_http.py`): one `/mcp`
   endpoint accepting JSON-RPC over POST, replying with JSON or a single-message
@@ -25,6 +27,43 @@
 - Ledger entries now record `action_digest` (via `Ledger.append(..., extra=...)`)
   so evidence packs need no side-channel data. Older entries are unchanged and
   still verify.
+
+**Tests:** 246 Python (10 suites) and 26 Rust (22 unit + 4 property); conformance
+33/33; gateway self-test 10/10; package installs as `lokahi-protocol==1.1.0`.
+
+### Also in this release
+
+- **R1-17/R1-18 telemetry** (`tools/lokahi_telemetry.py`): asynchronous bounded
+  fan-out to OTLP/HTTP JSON logs, generic webhook, Splunk HEC and Elastic
+  `_bulk`. Fail-open for export, never for decisions. `--telemetry` plus
+  `LOKAHI_OTEL_ENDPOINT`, `LOKAHI_SIEM_WEBHOOK`, `LOKAHI_SPLUNK_HEC_*`,
+  `LOKAHI_ELASTIC_*`. 11 tests.
+- **R1-20 approval inbox** (`tools/lokahi_notify.py`): HMAC-signed links bound to
+  `(digest, operator, expiry)`; console, webhook, Slack and SMTP channels; a
+  `/approve` page and ingest endpoint that still require the operator's own
+  signature. The gateway notifies operators on escalation. 13 tests including a
+  full escalate → approve → quorum flow.
+- **R1-02 OAuth 2.1 resource server** (`tools/lokahi_oauth.py`): RFC 9728
+  metadata, JWT verification with a fixed algorithm allowlist (RS256/ES256/HS256),
+  JWKS caching with fail-closed fetch, `iss`/`aud`/`exp`/`nbf` checks, and a
+  `WWW-Authenticate` challenge carrying `resource_metadata`.
+- **R1-10 per-consumer tool ACL** (`tools/lokahi_acl.py`): allow/deny with
+  wildcards, default deny, `tool_acl_denied`. Consumer identity comes from the
+  token's `client_id`.
+- **R1-07 conformance suite** (`tools/conformance.py`): 33 published checks over
+  the in-process engine and a running HTTP gateway.
+- **R1-13/R1-14 assurance**: five cargo-fuzz targets, 2,000-case Rust property
+  tests, and ten Python property tests for merge precedence and canonical
+  stability. The property tests found and fixed one merge edge: a refused
+  consent window could be downgraded to escalate.
+- **R1-26 deployment**: `Dockerfile.lokahi` (two-stage, non-root, read-only),
+  `docker-compose.lokahi.yml`, a Helm chart with probes and security context, and
+  a composite GitHub Action that verifies manifests, pins, evidence and runs the
+  conformance suite.
+- **R1-27 policy packs**: utility, hospital and editorial manifests with a
+  validation suite.
+- **Docs**: `docs/QUICKSTART.md`, `docs/CONCEPTS.md`,
+  `docs/ENTERPRISE_RFP.md` (60-point honest self-assessment).
 
 ## Unreleased — planning
 

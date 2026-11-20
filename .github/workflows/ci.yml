@@ -51,8 +51,23 @@ jobs:
     - name: Audit regression tests (C1-C4, H1-H3, M1, hardening)
       run: python tests/test_audit_regressions.py
 
-    - name: R1 feature tests (tool pinning, evidence packs, HTTP transport)
+    - name: R1 feature tests (tool pinning, evidence packs, HTTP transport, OAuth, ACL)
       run: python tests/test_r1_features.py
+
+    - name: Telemetry tests (OTLP, Splunk, Elastic, webhook)
+      run: python tests/test_telemetry.py
+
+    - name: Approval tests (links, channels, /approve)
+      run: python tests/test_approvals.py
+
+    - name: Policy pack tests
+      run: python tests/test_policy_packs.py
+
+    - name: Property tests (merge precedence, canonical stability)
+      run: python tests/test_properties.py
+
+    - name: Conformance suite
+      run: python tools/conformance.py
 
     - name: MCP gateway self-test (includes trust-boundary attacks)
       run: python tools/mcp_stdio_proxy.py --self-test
