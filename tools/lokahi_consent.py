@@ -217,17 +217,62 @@ class ConsentFramework:
         validator_keys: dict[str, Ed25519Verifier],
         threshold: Optional[Threshold] = None,
         suspension_quorum: int = SUSPENSION_QUORUM,
+        groups: Optional[dict[str, list[str]]] = None,
+        operator_roles: Optional[dict[str, str]] = None,
     ) -> None:
         if not validator_keys:
             raise ValueError("at least one validator key is required")
 
         self.manifest = manifest
         self.threshold = threshold or Threshold()
+        self.operator_roles = dict(operator_roles or {})
+        if any(
+            not isinstance(identity, str)
+            or not identity
+            or not isinstance(role, str)
+            or role not in {"operator", "auditor", "steward"}
+            for identity, role in self.operator_roles.items()
+        ):
+            raise ValueError(
+                "operator_roles must map non-empty identities to operator, auditor, or steward"
+            )
         # Dissent threshold. Defaults to the engine's SUSPENSION_QUORUM so the
         # two implementations cannot drift.
         self.suspension_quorum = int(suspension_quorum)
         if self.suspension_quorum < 1:
             raise ValueError("suspension_quorum must be >= 1")
+        # Optional named group: when the manifest names one, only its members
+        # count toward quorum. This keeps a large validator set from being
+        # diluted by people outside the body that owns the decision.
+        threshold_cfg = (
+            manifest.consent_threshold
+            if isinstance(manifest.consent_threshold, dict)
+            else {}
+        )
+        self.group_name = threshold_cfg.get("group")
+        self.group_members: Optional[set[str]] = None
+        if self.group_name:
+            if not isinstance(groups, dict) or self.group_name not in groups:
+                raise ValueError(f"manifest names consent group {self.group_name!r} but no membership was supplied")
+            members = groups[self.group_name]
+            if (
+                not isinstance(members, list)
+                or not all(isinstance(member, str) and member for member in members)
+                or len(members) != len(set(members))
+            ):
+                raise ValueError(f"consent group {self.group_name!r} must contain unique non-empty operator ids")
+            self.group_members = set(members)
+            unknown = self.group_members - set(validator_keys)
+            if unknown:
+                raise ValueError(
+                    f"consent group {self.group_name!r} contains operators without validator keys: "
+                    f"{sorted(unknown)}"
+                )
+            if len(self.group_members) != self.threshold.n:
+                raise ValueError(
+                    f"consent group {self.group_name!r} has {len(self.group_members)} members, "
+                    f"but manifest threshold n={self.threshold.n}"
+                )
         if len(validator_keys) < self.threshold.n:
             raise ValueError(
                 f"need at least {self.threshold.n} validator keys, got {len(validator_keys)}"
@@ -252,9 +297,12 @@ class ConsentFramework:
         manifest: Manifest,
         validator_keys: dict[str, Ed25519Verifier],
         suspension_quorum: int = SUSPENSION_QUORUM,
+        groups: Optional[dict[str, list[str]]] = None,
+        threshold: Optional[Threshold] = None,
+        operator_roles: Optional[dict[str, str]] = None,
     ) -> "ConsentFramework":
         """Build from a manifest, reading per-tool or global consent threshold."""
-        threshold = None
+        configured_threshold = threshold
         tools = manifest.tools or {}
         # Look for a default threshold in the manifest, or per-tool overrides.
         # Stored under manifest-level "consent_threshold" or per-tool "consent_threshold".
@@ -262,9 +310,19 @@ class ConsentFramework:
         if ct is None:
             ct = manifest.to_dict().get("consent_threshold")
         if ct is not None:
-            threshold = Threshold(m=int(ct.get("m", 2)), n=int(ct.get("n", 3)))
+            manifest_threshold = Threshold(m=int(ct.get("m", 2)), n=int(ct.get("n", 3)))
+            if configured_threshold is not None and configured_threshold != manifest_threshold:
+                raise ValueError(
+                    "validator-key threshold does not match the signed manifest threshold"
+                )
+            configured_threshold = manifest_threshold
         return cls(
-            manifest, validator_keys, threshold=threshold, suspension_quorum=suspension_quorum
+            manifest,
+            validator_keys,
+            threshold=configured_threshold,
+            suspension_quorum=suspension_quorum,
+            groups=groups,
+            operator_roles=operator_roles,
         )
 
     # ------------------------------------------------------------------
@@ -326,6 +384,12 @@ class ConsentFramework:
             if ap.expired(now):
                 continue
 
+            if self.group_members is not None and ap.operator not in self.group_members:
+                continue  # outside the consent group named by the manifest
+            if self.operator_roles.get(ap.operator) in {"operator", "auditor"}:
+                continue  # role policy: only stewards (or unassigned legacy keys) may approve
+            if self.operator_roles and ap.operator not in self.operator_roles:
+                continue  # once role assignments are enabled, unassigned keys cannot count
             verifier = self.validators.get(ap.operator)
             if verifier is None:
                 continue  # unregistered operator
@@ -418,4 +482,3 @@ class ConsentFramework:
         population-affecting). Reversible, non-population actions are fast-path
         and need no consent."""
         return (not action.reversible) or action.population_affecting
-

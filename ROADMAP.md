@@ -101,14 +101,14 @@ The release that makes us pass an RFP without apologising.
 - OAuth 2.1 resource server: RFC 9728 PRM, PKCE, RFC 8707 resource indicators, RFC 9207 `iss` validation
 - Client ID Metadata Documents; per-client consent for static client IDs
 - No token passthrough; RFC 8693 token exchange for upstream
-- MCP `_meta` approval-status convention; `input_required` interrupt support
+- MCP `_meta` approval-status convention; `input_required` pending-interrupt metadata (client suspend/resume remains client-owned)
 - Gateway conformance test suite (publish as standalone package)
 
 **W2 Identity & authority**
 - OIDC-authenticated approvers; WebAuthn/passkey confirmation per decision
-- RBAC: steward / operator / auditor roles; per-tool authority grants
+- RBAC: steward / operator / auditor roles; per-tool authority grants; IdP role sync remains future work
 - Tool ACLs per consumer and team
-- Approver directory + group quorum (e.g. "any 2 of the water board")
+- Approver directory + named group quorum (e.g. "any 2 of the water board"); local group mapping implemented, IdP resolution remains future work
 
 **W3 Kernel**
 - Rust host binary (`lokahi-gateway-rs`) with embedded WASM kernel: p99 < 1 ms decision
@@ -243,12 +243,12 @@ Become the thing other people implement.
 | R1-03 | RFC 9207 `iss` validation + CIMD registration | W1 | Mix-up attack test passes |
 | R1-04 | Per-client consent (confused deputy) | W1 | Static-client-ID flow forces consent |
 | R1-05 | Token exchange / no passthrough | W1 | Upstream token differs from client token |
-| R1-06 | `_meta` approval-status + `input_required` | W1 | Client can distinguish pending from failure |
+| R1-06 | `_meta` approval-status + `input_required` | W1 | Pending, timed-out, approved, refused, and no-consent states distinguished; pending sets interrupt metadata |
 | R1-07 | Gateway conformance suite (publish) | W1 | 40+ checks, CI-integrated |
 | R1-08 | OIDC approver identity + passkey confirm | W2 | Approval requires fresh WebAuthn |
-| R1-09 | RBAC roles + per-tool authority grants | W2 | Auditor cannot approve; operator cannot self-approve |
+| R1-09 | RBAC roles + per-tool authority grants | W2 | Configured auditor/operator restrictions enforced at invoke, approval ingest, and quorum; IdP sync deferred |
 | R1-10 | Tool ACL per consumer/team | W2 | Cross-team call denied |
-| R1-11 | Group quorum ("any 2 of board") | W2 | Group membership resolved from IdP |
+| R1-11 | Group quorum ("any 2 of board") | W2 | Named local membership constrains eligible validators and matches manifest n; IdP group resolution deferred |
 | R1-12 | Rust host + embedded WASM kernel | W3 | p99 < 1 ms; parity with Python |
 | R1-13 | Fuzz harness + differential tests | W3 | 24h fuzz clean; oracle parity |
 | R1-14 | Merge-precedence property tests | W3 | Consent never relaxes a safety refusal |

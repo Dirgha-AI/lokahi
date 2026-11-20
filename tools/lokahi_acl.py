@@ -42,6 +42,9 @@ def _matches(patterns: Iterable[str], tool: str) -> bool:
     return False
 
 
+ROLES = {"operator", "auditor", "steward"}
+
+
 @dataclass
 class ToolACL:
     default: str = "deny"                      # deny | allow
@@ -55,28 +58,86 @@ class ToolACL:
                 raise ACLError("consumer ids must be non-empty strings")
             if not isinstance(rules, dict):
                 raise ACLError(f"consumer {consumer!r} must map to an object")
-            unknown = set(rules) - {"allow", "deny"}
+            unknown = set(rules) - {"allow", "deny", "role"}
             if unknown:
                 raise ACLError(f"consumer {consumer!r} has unknown keys: {sorted(unknown)}")
+            if "role" in rules and (
+                not isinstance(rules["role"], str) or rules["role"] not in ROLES
+            ):
+                raise ACLError(f"consumer {consumer!r}: role must be one of {sorted(ROLES)}")
+            if consumer == "*" and "role" in rules:
+                raise ACLError("wildcard consumer entries cannot assign a role")
             for key in ("allow", "deny"):
                 if key in rules and not (
                     isinstance(rules[key], list) and all(isinstance(x, str) for x in rules[key])
                 ):
                     raise ACLError(f"consumer {consumer!r}: {key} must be a list of strings")
+        for rules in self.consumers.values():
+            if "deny" in rules and "allow" in rules:
+                # Explicit denies always win (tested in allows()).
+                continue
 
     @classmethod
     def from_dict(cls, data: dict) -> "ToolACL":
         if not isinstance(data, dict):
             raise ACLError("ACL must be an object")
+        consumers = data.get("consumers", {})
+        if not isinstance(consumers, dict):
+            raise ACLError("consumers must be an object")
         return cls(
             default=str(data.get("default", "deny")),
-            consumers=dict(data.get("consumers", {})),
+            consumers=consumers,
         )
 
     @classmethod
     def load(cls, path: str) -> "ToolACL":
         with open(path, encoding="utf-8") as f:
             return cls.from_dict(json.load(f))
+
+    def role_of(self, consumer: Optional[str]) -> Optional[str]:
+        """The role assigned to a consumer, if any."""
+        if not consumer:
+            return None
+        rules = self.consumers.get(consumer)
+        if rules is None:
+            rules = self.consumers.get("*")
+        if rules is None:
+            return None
+        return rules.get("role")
+
+    def configured_roles(self) -> dict[str, str]:
+        """Return explicit identity-to-role assignments for consent checks."""
+        return {
+            identity: rules["role"]
+            for identity, rules in self.consumers.items()
+            if identity != "*" and isinstance(rules.get("role"), str)
+        }
+
+    def enforces_rbac(self) -> bool:
+        """Whether this ACL defines any role-based authority assignments."""
+        return bool(self.configured_roles())
+
+    def may_invoke(self, consumer: Optional[str], tool: str) -> tuple[bool, str]:
+        """Return (allowed, reason). Auditors cannot invoke tools."""
+        role = self.role_of(consumer)
+        if role == "auditor":
+            return False, f"role_cannot_invoke:auditor:{consumer}"
+        if not self.allows(consumer, tool):
+            return False, f"tool_acl_denied:{consumer or 'anonymous'}:{tool}"
+        return True, ""
+
+    def may_approve(self, operator: Optional[str]) -> tuple[bool, str]:
+        """Only stewards (or legacy unassigned validators) may approve.
+
+        The cryptographic validator registry still decides whether the signed
+        approval is authoritative; this is the separate authorization check.
+        """
+        role = self.role_of(operator)
+        if role is None and self.enforces_rbac():
+            return False, f"role_unassigned_cannot_approve:{operator or 'anonymous'}"
+        if role in {"operator", "auditor"}:
+            return False, f"role_cannot_approve:{role}:{operator}"
+        return True, ""
 
     def allows(self, consumer: Optional[str], tool: str) -> bool:
         """True if `consumer` may call `tool` under this ACL."""

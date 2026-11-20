@@ -56,11 +56,13 @@ def keygen(
     threshold: Optional[int] = None,
     n: Optional[int] = None,
     out_dir: Optional[str] = None,
+    group: Optional[str] = None,
 ) -> int:
     """Generate key file(s).
 
     --ed25519: single Ed25519 manifest signing key.
     --threshold m --n n --out-dir dir: n validator Ed25519 key pairs + approvers.json.
+    --group name: include a matching consent group in approvers.json.
     """
     if ed25519:
         if not _ED25519_AVAILABLE:
@@ -103,6 +105,9 @@ def keygen(
         if threshold < 1 or n < threshold:
             print("lokahi: require 1 <= threshold <= n", file=sys.stderr)
             return 2
+        if group is not None and not group.strip():
+            print("lokahi: --group cannot be empty", file=sys.stderr)
+            return 2
         if not _ED25519_AVAILABLE:
             print(
                 "lokahi: threshold keys require the 'cryptography' package",
@@ -111,6 +116,9 @@ def keygen(
             return 2
         if not out_dir:
             print("lokahi: --out-dir is required with --threshold/--n", file=sys.stderr)
+            return 2
+        if group and not group.strip():
+            print("lokahi: --group cannot be empty", file=sys.stderr)
             return 2
         os.makedirs(out_dir, exist_ok=True)
 
@@ -129,11 +137,14 @@ def keygen(
 
         approvers_path = os.path.join(out_dir, "approvers.json")
         with open(approvers_path, "w", encoding="utf-8") as f:
+            config = {
+                "threshold": {"m": threshold, "n": n},
+                "validators": validators,
+            }
+            if group:
+                config["groups"] = {group: list(validators.keys())}
             json.dump(
-                {
-                    "threshold": {"m": threshold, "n": n},
-                    "validators": validators,
-                },
+                config,
                 f,
                 indent=2,
                 sort_keys=True,
@@ -238,6 +249,11 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Output directory for threshold validator keys (required with --threshold)",
     )
+    k.add_argument(
+        "--group",
+        default=None,
+        help="Optional named consent group to record in approvers.json",
+    )
 
     m = sub.add_parser("manifest", help="Validate and sign a manifest JSON file")
     m.add_argument("--key-file", required=True, help="The manifest signing key")
@@ -253,6 +269,7 @@ def main(argv: list[str] | None = None) -> int:
             threshold=a.threshold,
             n=a.n,
             out_dir=a.out_dir,
+            group=a.group,
         )
     return sign_manifest(a.key_file, a.src, a.out)
 

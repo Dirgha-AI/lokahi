@@ -731,5 +731,259 @@ class TestToolACL(unittest.TestCase):
         self.assertIn("tool_acl_denied:team:a:email_author", denied["error"]["data"]["reasons"])
 
 
+
+
+# ---------------------------------------------------------------------------
+# R1-06 / R1-09 / R1-11: approval status, roles, consent groups
+# ---------------------------------------------------------------------------
+
+class TestApprovalStatusProtocol(unittest.TestCase):
+    def setUp(self):
+        self.signer = Signer(KEY)
+        self.gm = LokahiMCPGateway(_manifest(self.signer), self.signer,
+                                   approvers={}, approval_store=ApprovalStore())
+
+    def test_escalation_carries_pending_status(self):
+        result = self.gm.intercept(_call("email_author", {"meter_id": "M-1"}), now=NOW)
+        self.assertFalse(result["allowed"])
+        data = result["error"]["data"]
+        self.assertTrue(data.get("input_required"))
+        self.assertEqual(data["_meta"]["approval_status"], "pending")
+        self.assertEqual(data["_meta"]["action_digest"], data["action_digest"])
+
+    def test_allow_has_no_pending_metadata(self):
+        result = self.gm.intercept(_call("read_meter", {"meter_id": "M-1"}), now=NOW)
+        self.assertTrue(result["allowed"])
+        self.assertEqual(result["lokahi_receipt"]["_meta"]["approval_status"], "not_requested")
+        self.assertNotIn("input_required", result["lokahi_receipt"])
+
+    def test_timed_out_consent_is_not_input_required(self):
+        self.gm.approval_window_seconds = 1
+        first = self.gm.intercept(_call("email_author", {"meter_id": "M-1"}), now=NOW)
+        self.assertTrue(first["error"]["data"]["input_required"])
+        timed_out = self.gm.intercept(
+            _call("email_author", {"meter_id": "M-1"}, 2), now=NOW + 2
+        )
+        self.assertFalse(timed_out["allowed"])
+        self.assertEqual(timed_out["error"]["data"]["_meta"]["approval_status"], "timed_out")
+        self.assertNotIn("input_required", timed_out["error"]["data"])
+
+    def test_safety_refusal_is_refused_not_pending(self):
+        # Unknown tools are hard refusals; no action may be resumed by approval.
+        refused = self.gm.intercept(_call("not_in_policy", {}), now=NOW)
+        self.assertFalse(refused["allowed"])
+        self.assertEqual(refused["error"]["data"]["_meta"]["approval_status"], "refused")
+        self.assertNotIn("input_required", refused["error"]["data"])
+
+
+class TestRoles(unittest.TestCase):
+    def setUp(self):
+        from lokahi_acl import ToolACL
+
+        self.acl = ToolACL.from_dict({
+            "default": "deny",
+            "consumers": {
+                "team:ops": {"role": "operator", "allow": ["read_meter"]},
+                "audit:alice": {"role": "auditor"},
+                "board:bob": {"role": "steward", "allow": ["read_meter"]},
+            },
+        })
+
+    def test_auditor_cannot_invoke(self):
+        allowed, reason = self.acl.may_invoke("audit:alice", "read_meter")
+        self.assertFalse(allowed)
+        self.assertTrue(reason.startswith("role_cannot_invoke:auditor"))
+
+    def test_operator_can_invoke_listed_tool(self):
+        self.assertEqual(self.acl.may_invoke("team:ops", "read_meter"), (True, ""))
+
+    def test_steward_role_still_subject_to_tool_list(self):
+        allowed, reason = self.acl.may_invoke("board:bob", "email_author")
+        self.assertFalse(allowed)
+        self.assertTrue(reason.startswith("tool_acl_denied"))
+
+    def test_gateway_enforces_auditor_role(self):
+        signer = Signer(KEY)
+        gw = LokahiMCPGateway(_manifest(signer), signer, approvers={}, approval_store=ApprovalStore(),
+                              tool_acl=self.acl)
+        result = gw.intercept(_call("read_meter", {"meter_id": "M-1"}), now=NOW,
+                              consumer="audit:alice")
+        self.assertFalse(result["allowed"])
+        self.assertTrue(any("role_cannot_invoke" in r for r in result["error"]["data"]["reasons"]))
+
+    def test_auditor_cannot_approve(self):
+        allowed, reason = self.acl.may_approve("audit:alice")
+        self.assertFalse(allowed)
+        self.assertEqual(reason, "role_cannot_approve:auditor:audit:alice")
+        self.assertEqual(self.acl.may_approve("team:ops"),
+                         (False, "role_cannot_approve:operator:team:ops"))
+        self.assertTrue(self.acl.may_approve("board:bob")[0])
+
+    def test_role_mode_rejects_unassigned_approver(self):
+        allowed, reason = self.acl.may_approve("unknown:person")
+        self.assertFalse(allowed)
+        self.assertEqual(reason, "role_unassigned_cannot_approve:unknown:person")
+
+    def test_empty_exact_identity_does_not_inherit_wildcard_role(self):
+        from lokahi_acl import ToolACL
+
+        acl = ToolACL.from_dict({
+            "default": "deny",
+            "consumers": {"*": {"allow": ["read_meter"]}, "team:explicit": {}},
+        })
+        self.assertIsNone(acl.role_of("team:explicit"))
+
+
+class TestConsentGroups(unittest.TestCase):
+    def test_threshold_keygen_records_group_membership(self):
+        import tempfile
+        import lokahi_sign
+
+        with tempfile.TemporaryDirectory() as temp:
+            rc = lokahi_sign.main([
+                "keygen", "--threshold", "2", "--n", "3", "--group", "water-board",
+                "--out-dir", temp,
+            ])
+            self.assertEqual(rc, 0)
+            with open(os.path.join(temp, "approvers.json"), encoding="utf-8") as stream:
+                config = json.load(stream)
+            self.assertEqual(config["groups"]["water-board"], sorted(config["validators"]))
+
+    def test_only_group_members_count(self):
+        signer = Signer(KEY)
+        manifest = _manifest(signer, threshold={"m": 2, "n": 3, "group": "water-board"})
+        verifiers, seeds = {}, {}
+        for i in range(4):
+            s = Ed25519Signer.generate()
+            seeds[f"v:{i}"] = s.private_bytes().hex()
+            verifiers[f"v:{i}"] = Ed25519Verifier.from_public_bytes(s.public_bytes())
+        groups = {"water-board": ["v:0", "v:1", "v:2"]}  # v:3 is outside
+        cf = ConsentFramework(manifest, verifiers, threshold=Threshold(2, 3), groups=groups)
+        store = ApprovalStore()
+        gw = LokahiMCPGateway(manifest, signer, approvers={}, approval_store=store,
+                             consent_framework=cf)
+        first = gw.intercept(_call("email_author", {"meter_id": "M-1"}), now=NOW)
+        digest = first["error"]["data"]["action_digest"]
+
+        # One member and one outsider: only the member counts.
+        for op in ("v:2", "v:3"):
+            s = Ed25519Signer.from_private_bytes(bytes.fromhex(seeds[op]))
+            store.add(Approval(op, "d", "yes", digest, "2030-01-01T00:00:00Z", f"n-{op}").sign(s))
+        still = gw.intercept(_call("email_author", {"meter_id": "M-1"}, 2), now=NOW)
+        # v:2 is in the group, v:3 is not -> only one counts.
+        self.assertEqual(still["error"]["data"]["quorum_met"], 1)
+
+        # A second member tips it.
+        s = Ed25519Signer.from_private_bytes(bytes.fromhex(seeds["v:1"]))
+        store.add(Approval("v:1", "d", "yes", digest, "2030-01-01T00:00:00Z", "n-v1").sign(s))
+        final = gw.intercept(_call("email_author", {"meter_id": "M-1"}, 3), now=NOW)
+        self.assertTrue(final.get("allowed"), final)
+        self.assertEqual(final["lokahi_receipt"]["_meta"]["approval_status"], "approved")
+
+    def test_manifest_group_without_membership_is_rejected(self):
+        signer = Signer(KEY)
+        manifest = _manifest(signer, threshold={"m": 2, "n": 3, "group": "water-board"})
+        with self.assertRaises(ValueError):
+            ConsentFramework(manifest, {"v:0": Ed25519Verifier.from_public_bytes(
+                Ed25519Signer.generate().public_bytes())}, threshold=Threshold(2, 3))
+
+    def test_group_must_match_manifest_n_and_registered_keys(self):
+        signer = Signer(KEY)
+        manifest = _manifest(signer, threshold={"m": 2, "n": 3, "group": "water-board"})
+        verifiers = {}
+        for i in range(4):
+            verifiers[f"v:{i}"] = Ed25519Verifier.from_public_bytes(
+                Ed25519Signer.generate().public_bytes()
+            )
+        with self.assertRaisesRegex(ValueError, "threshold n"):
+            ConsentFramework(
+                manifest, verifiers, threshold=Threshold(2, 3),
+                groups={"water-board": ["v:0", "v:1"]},
+            )
+        with self.assertRaisesRegex(ValueError, "without validator keys"):
+            ConsentFramework(
+                manifest, verifiers, threshold=Threshold(2, 3),
+                groups={"water-board": ["v:0", "v:1", "missing"]},
+            )
+
+    def test_from_manifest_uses_validator_config_threshold_when_manifest_omits_it(self):
+        signer = Signer(KEY)
+        manifest = _manifest(signer, threshold=None)
+        verifiers = {}
+        for i in range(2):
+            verifiers[f"v:{i}"] = Ed25519Verifier.from_public_bytes(
+                Ed25519Signer.generate().public_bytes()
+            )
+        framework = ConsentFramework.from_manifest(
+            manifest, verifiers, threshold=Threshold(1, 2)
+        )
+        self.assertEqual((framework.threshold.m, framework.threshold.n), (1, 2))
+
+    def test_from_manifest_rejects_threshold_conflicting_with_signed_policy(self):
+        signer = Signer(KEY)
+        manifest = _manifest(signer, threshold={"m": 2, "n": 3})
+        verifiers = {}
+        for i in range(3):
+            verifiers[f"v:{i}"] = Ed25519Verifier.from_public_bytes(
+                Ed25519Signer.generate().public_bytes()
+            )
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            ConsentFramework.from_manifest(
+                manifest, verifiers, threshold=Threshold(1, 3)
+            )
+
+    def test_role_policy_is_applied_to_signed_approvals(self):
+        signer = Signer(KEY)
+        manifest = _manifest(signer, threshold={"m": 2, "n": 2})
+        validators, private = {}, {}
+        for operator in ("v:steward", "v:auditor"):
+            key = Ed25519Signer.generate()
+            private[operator] = key
+            validators[operator] = Ed25519Verifier.from_public_bytes(key.public_bytes())
+        framework = ConsentFramework(
+            manifest,
+            validators,
+            threshold=Threshold(2, 2),
+            operator_roles={"v:steward": "steward", "v:auditor": "auditor"},
+        )
+        from lokahi import Action, compute_action_digest
+
+        action = Action("agent:x", "email_author", ["meter_id"], "IN-DL", reversible=False)
+        digest = compute_action_digest(manifest, action)
+        approvals = [
+            Approval(op, "device", "yes", digest, "2030-01-01T00:00:00Z", op).sign(key)
+            for op, key in private.items()
+        ]
+        result = framework.check_consent(action, approvals, now=NOW)
+        self.assertFalse(result.consent_met)
+        self.assertEqual(result.yes_operators, ["v:steward"])
+        self.assertEqual(result.quorum_met, 1)
+
+    def test_unassigned_validator_does_not_count_in_role_mode(self):
+        signer = Signer(KEY)
+        manifest = _manifest(signer, threshold={"m": 2, "n": 2})
+        private, validators = {}, {}
+        for operator in ("v:steward", "v:unassigned"):
+            key = Ed25519Signer.generate()
+            private[operator] = key
+            validators[operator] = Ed25519Verifier.from_public_bytes(key.public_bytes())
+        framework = ConsentFramework(
+            manifest, validators, threshold=Threshold(2, 2),
+            operator_roles={"v:steward": "steward"},
+        )
+        from lokahi import Action, compute_action_digest
+
+        action = Action("agent:x", "email_author", ["meter_id"], "IN-DL", reversible=False)
+        digest = compute_action_digest(manifest, action)
+        approvals = [
+            Approval("v:unassigned", "device", "yes", digest, "2030-01-01T00:00:00Z", "n").sign(
+                private["v:unassigned"]
+            )
+        ]
+        result = framework.check_consent(action, approvals, now=NOW)
+        self.assertFalse(result.consent_met)
+        self.assertEqual(result.quorum_met, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

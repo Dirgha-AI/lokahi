@@ -212,6 +212,61 @@ class TestApproveEndpoint(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(json.loads(body)["error"], "bad_link")
 
+    def test_non_object_approval_rejected_without_server_error(self):
+        status, body = self._post("/approve", ["not", "an", "object"])
+        self.assertEqual(status, 400)
+        self.assertEqual(json.loads(body)["error"], "expected {token, approval}")
+
+    def test_auditor_role_cannot_ingest_approval(self):
+        from lokahi_acl import ToolACL
+
+        digest = self._escalate()
+        self.gw.tool_acl = ToolACL.from_dict({
+            "default": "allow",
+            "consumers": {"v:0": {"role": "auditor"}},
+        })
+        token = build_link("", digest, "v:0", int(time.time()) + 3600, LINK_KEY).split("t=")[1]
+        status, body = self._post(
+            "/approve", {"token": token, "approval": self._signed("v:0", digest)}
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(json.loads(body)["error"], "approval_forbidden")
+
+    def test_external_operator_roles_apply_without_tool_acl(self):
+        digest = self._escalate()
+        self.gw.operator_roles = {"v:0": "operator"}
+        token = build_link("", digest, "v:0", int(time.time()) + 3600, LINK_KEY).split("t=")[1]
+        status, body = self._post(
+            "/approve", {"token": token, "approval": self._signed("v:0", digest)}
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(json.loads(body)["error"], "approval_forbidden")
+
+    def test_role_mode_rejects_unassigned_approver(self):
+        digest = self._escalate()
+        self.gw.operator_roles = {"v:1": "steward"}
+        token = build_link("", digest, "v:0", int(time.time()) + 3600, LINK_KEY).split("t=")[1]
+        status, body = self._post(
+            "/approve", {"token": token, "approval": self._signed("v:0", digest)}
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(json.loads(body)["error"], "approval_forbidden")
+
+    def test_operator_role_cannot_ingest_approval(self):
+        from lokahi_acl import ToolACL
+
+        digest = self._escalate()
+        self.gw.tool_acl = ToolACL.from_dict({
+            "default": "allow",
+            "consumers": {"v:0": {"role": "operator"}},
+        })
+        token = build_link("", digest, "v:0", int(time.time()) + 3600, LINK_KEY).split("t=")[1]
+        status, body = self._post(
+            "/approve", {"token": token, "approval": self._signed("v:0", digest)}
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(json.loads(body)["error"], "approval_forbidden")
+
     def test_get_approve_page_renders(self):
         import http.client
         digest = self._escalate()

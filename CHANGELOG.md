@@ -67,6 +67,18 @@
 
 ## Unreleased — planning
 
+- **R1-06 approval status**: MCP error data now carries `_meta.approval_status`
+  (`pending`, `approved`, `timed_out`, `refused`, or `not_requested`). Only a
+  pending escalation sets `input_required`; clients own the actual suspend/resume
+  interaction.
+- **R1-09 local RBAC**: configured `steward`, `operator`, and `auditor` roles are
+  enforced at invocation, approval ingestion, and quorum counting. This is local
+  policy, not IdP-backed role management.
+- **R1-11 named consent groups**: validator config can carry group membership
+  (`lokahi_sign.py keygen --group ...`) or use `--operator-groups`. Membership is
+  checked against registered keys and signed manifest `n`; IdP resolution is
+  still deferred.
+
 - **`ROADMAP.md`** — phased plan to open-source SOTA: competitive parity matrix
   across 12 vendors, 10 workstreams, releases R0–R4 with acceptance criteria,
   published benchmark targets, resourcing and exit gates.

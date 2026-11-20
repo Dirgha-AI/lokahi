@@ -30,9 +30,9 @@ Counts: **Met 24 · Partial 14 · Not met 14 · Planned 8** (as of v1.1.0).
 |---|---|---|---|
 | B1 | Approver identity from an IdP | Partial | JWT `sub`/`client_id` accepted; no interactive OIDC login for approvers |
 | B2 | WebAuthn / passkey confirmation per decision | Not met | R1-20b; approvals currently require a signing key |
-| B3 | RBAC (steward / operator / auditor) | Partial | roles are not modelled; consumer ACLs only |
+| B3 | RBAC (steward / operator / auditor) | Partial | local role mapping enforces tool invocation and approval/quorum restrictions; no IdP role/group sync |
 | B4 | Per-consumer tool ACL | Met | `lokahi_acl.py`, `--tool-acl` |
-| B5 | Group quorum resolved from IdP groups | Not met | R1-11 |
+| B5 | Group quorum resolved from IdP groups | Partial | named local groups constrain quorum; IdP group resolution remains planned |
 | B6 | Agent cannot approve itself | Met | `agent_supplied_control_metadata` |
 | B7 | Operator cannot approve its own agent | Met | Rule 11 + consent exclusion |
 | B8 | Emergency declarant cannot vote | Met | Rule 12 + consent exclusion |

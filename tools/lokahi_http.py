@@ -112,10 +112,15 @@ def make_handler(
                 return
             try:
                 payload = _json.loads(self.rfile.read(length).decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise TypeError("body must be a JSON object")
                 token = payload["token"]
                 approval = payload["approval"]
             except (ValueError, KeyError, TypeError):
                 self._json(400, {"error": "expected {token, approval}"})
+                return
+            if not isinstance(token, str) or not isinstance(approval, dict):
+                self._json(400, {"error": "token must be a string and approval must be an object"})
                 return
 
             try:
@@ -143,6 +148,22 @@ def make_handler(
             except (ValueError, TypeError) as exc:
                 self._json(400, {"error": "malformed_approval", "detail": str(exc)})
                 return
+
+            authorize_approval = getattr(gateway, "authorize_approval", None)
+            if callable(authorize_approval):
+                allowed, reason = authorize_approval(record.operator)
+                if not allowed:
+                    bump("auth_failures")
+                    self._json(403, {"error": "approval_forbidden", "reason": reason})
+                    return
+            else:
+                acl = getattr(gateway, "tool_acl", None)
+                if acl is not None and hasattr(acl, "may_approve"):
+                    allowed, reason = acl.may_approve(record.operator)
+                    if not allowed:
+                        bump("auth_failures")
+                        self._json(403, {"error": "approval_forbidden", "reason": reason})
+                        return
 
             store = getattr(gateway, "approval_store", None)
             if store is None or not hasattr(store, "add"):

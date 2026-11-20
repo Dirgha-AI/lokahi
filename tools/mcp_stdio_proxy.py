@@ -378,6 +378,7 @@ class LokahiMCPGateway:
         tool_acl: Any = None,
         telemetry: Any = None,
         notifier: Any = None,
+        operator_roles: dict[str, str] | None = None,
     ) -> None:
         if signer is None:
             raise GatewayConfigError("a manifest verification key is required; refusing to start without one")
@@ -399,6 +400,25 @@ class LokahiMCPGateway:
         self.tool_acl = tool_acl
         self.telemetry = telemetry
         self.notifier = notifier
+        self.operator_roles = dict(operator_roles or {})
+        if any(
+            not isinstance(identity, str)
+            or not identity
+            or not isinstance(role, str)
+            or role not in {"operator", "auditor", "steward"}
+            for identity, role in self.operator_roles.items()
+        ):
+            raise GatewayConfigError(
+                "operator_roles must map non-empty identities to operator, auditor, or steward"
+            )
+        if self.tool_acl is not None and hasattr(self.tool_acl, "configured_roles"):
+            for identity, role in self.tool_acl.configured_roles().items():
+                existing = self.operator_roles.get(identity)
+                if existing is not None and existing != role:
+                    raise GatewayConfigError(
+                        f"conflicting role assignments for {identity!r}: {existing!r} and {role!r}"
+                    )
+                self.operator_roles[identity] = role
         # Layer 1: WASM deterministic pre-flight.
         if preflight is not None:
             self.preflight = preflight
@@ -426,6 +446,8 @@ class LokahiMCPGateway:
         else:
             self.consent_framework = None
         self._cf_available = _cf_available
+        if self.consent_framework is not None:
+            self.consent_framework.operator_roles.update(self.operator_roles)
         # Experimental learned decisions tier. Off unless the caller asks for it.
         tier_model = slm_judge if slm_judge is not None else None
         self.decision_tier = _make_decision_tier(experimental_decisions, tier_model=tier_model)
@@ -467,6 +489,17 @@ class LokahiMCPGateway:
             except ValueError:
                 self._policy_error = "invalid_tool_policy"
 
+    def authorize_approval(self, operator: str) -> tuple[bool, str]:
+        """Apply configured role authorization before accepting an approval."""
+        role = self.operator_roles.get(operator)
+        if role in {"operator", "auditor"}:
+            return False, f"role_cannot_approve:{role}:{operator}"
+        if role is None and self.operator_roles:
+            return False, f"role_unassigned_cannot_approve:{operator or 'anonymous'}"
+        if self.tool_acl is not None and hasattr(self.tool_acl, "may_approve"):
+            return self.tool_acl.may_approve(operator)
+        return True, ""
+
     # ------------------------------------------------------------------
     def _record(
         self,
@@ -494,6 +527,31 @@ class LokahiMCPGateway:
         }
         if extra:
             data.update(extra)
+        # Protocol extension for clients that can pause and resume a tool call.
+        # `input_required` is true only while the consent round is actually
+        # pending; a refusal is never represented as an invitation to retry.
+        threshold = (extra or {}).get("threshold_consent", {})
+        if decision.verdict == ESCALATE:
+            approval_status = "pending"
+            data["input_required"] = True
+        elif "non_response" in decision.reasons:
+            approval_status = "timed_out"
+        elif decision.verdict == COMPLIANT and decision.quorum_required > 0:
+            approval_status = "approved"
+        elif threshold or decision.quorum_required > 0:
+            approval_status = "refused"
+        elif decision.verdict == COMPLIANT:
+            approval_status = "not_requested"
+        else:
+            approval_status = "refused"
+        meta: dict[str, Any] = {
+            "approval_status": approval_status,
+            "action_digest": str((extra or {}).get("action_digest", "")),
+        }
+        closes = (extra or {}).get("approval_window_closes")
+        if closes is not None:
+            meta["approval_window_closes"] = closes
+        data["_meta"] = meta
         if (
             self.notifier is not None
             and decision.verdict == ESCALATE
@@ -643,7 +701,13 @@ class LokahiMCPGateway:
         # who may reach it. Both must permit the call.
         # ------------------------------------------------------------------
         if self.tool_acl is not None:
-            if not self.tool_acl.allows(consumer or self.default_requester, tool_name):
+            if hasattr(self.tool_acl, "may_invoke"):
+                allowed, reason = self.tool_acl.may_invoke(
+                    consumer or self.default_requester, tool_name
+                )
+                if not allowed:
+                    return self._deny(rpc_msg, base, now, [reason])
+            elif not self.tool_acl.allows(consumer or self.default_requester, tool_name):
                 return self._deny(
                     rpc_msg, base, now,
                     [f"tool_acl_denied:{consumer or self.default_requester}:{tool_name}"],
@@ -1097,7 +1161,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--oauth-alg", default="RS256,ES256", help="Comma-separated algorithm allowlist.")
     parser.add_argument("--oauth-hs256-secret", help="Shared secret for HS256 tokens (local testing only). Or set LOKAHI_OAUTH_HS256_SECRET.")
     parser.add_argument("--oauth-resource", help="Canonical resource URI published in RFC 9728 metadata.")
-    parser.add_argument("--tool-acl", help="JSON file mapping consumers to allowed tools (R1-10).")
+    parser.add_argument("--tool-acl", help="JSON file mapping consumers to allowed tools/roles (R1-09/R1-10).")
+    parser.add_argument("--operator-groups", help="JSON file mapping consent group names to operator id lists.")
+    parser.add_argument("--operator-roles", help="JSON file mapping validator/operator ids to operator, auditor, or steward roles.")
     parser.add_argument(
         "--notify-config",
         help="JSON file configuring approval notifications (link key, operators, SMTP/Slack/webhook).",
@@ -1174,6 +1240,47 @@ def main(argv: list[str] | None = None) -> int:
 
     # Layer 3: initialize threshold consent framework if validator keys were provided.
     _ConsentFramework, _Ed25519Verifier, _Ed25519Signer, _Threshold, _cf_available = _import_consent_framework()
+    consent_groups = None
+    if args.operator_groups:
+        try:
+            with open(args.operator_groups, encoding="utf-8") as f:
+                consent_groups = json.load(f)
+        except (OSError, ValueError) as exc:
+            return refuse(f"cannot load operator groups: {exc}")
+    elif args.validator_keys:
+        # Prefer co-located group membership generated with the validator key
+        # set, keeping the named group and public-key roster together.
+        try:
+            with open(args.validator_keys, encoding="utf-8") as f:
+                key_config = json.load(f)
+            consent_groups = key_config.get("groups")
+        except (OSError, ValueError) as exc:
+            return refuse(f"cannot load operator groups from validator config: {exc}")
+    if consent_groups is not None and (
+        not isinstance(consent_groups, dict)
+        or not all(
+            isinstance(name, str) and bool(name)
+            and isinstance(members, list)
+            and all(isinstance(member, str) and member for member in members)
+            for name, members in consent_groups.items()
+        )
+    ):
+        return refuse("operator groups must map group names to lists of operator ids")
+
+    operator_roles = None
+    if args.operator_roles:
+        try:
+            with open(args.operator_roles, encoding="utf-8") as f:
+                operator_roles = json.load(f)
+            if not isinstance(operator_roles, dict) or not all(
+                isinstance(k, str) and bool(k)
+                and isinstance(v, str) and v in {"operator", "auditor", "steward"}
+                for k, v in operator_roles.items()
+            ):
+                return refuse("operator roles must map non-empty identities to operator, auditor, or steward")
+        except (OSError, ValueError) as exc:
+            return refuse(f"cannot load operator roles: {exc}")
+
     consent_framework = None
     if args.validator_keys:
         if not _cf_available:
@@ -1185,14 +1292,35 @@ def main(argv: list[str] | None = None) -> int:
                 with open(args.validator_keys, encoding="utf-8") as f:
                     vk_data = json.load(f)
                 threshold_cfg = vk_data.get("threshold", {"m": 2, "n": 3})
+                if not isinstance(threshold_cfg, dict):
+                    raise ValueError("validator threshold must be an object with m and n")
+                if consent_groups is None:
+                    consent_groups = vk_data.get("groups")
+                    if consent_groups is not None and (
+                        not isinstance(consent_groups, dict)
+                        or not all(
+                            isinstance(name, str) and bool(name)
+                            and isinstance(members, list)
+                            and all(isinstance(member, str) and member for member in members)
+                            for name, members in consent_groups.items()
+                        )
+                    ):
+                        raise ValueError("validator groups must map names to lists of operator ids")
                 validators = vk_data.get("validators", {})
+                if not isinstance(validators, dict):
+                    raise ValueError("validator keys must be an object")
                 validator_verifiers = {}
                 for operator, pub_hex in validators.items():
                     verifier = _Ed25519Verifier.from_public_bytes(bytes.fromhex(pub_hex))
                     validator_verifiers[operator] = verifier
                 threshold = _Threshold(m=int(threshold_cfg["m"]), n=int(threshold_cfg["n"]))
                 consent_framework = _ConsentFramework.from_manifest(
-                    manifest, validator_verifiers, threshold=threshold
+                    manifest,
+                    validator_verifiers,
+                    suspension_quorum=2,
+                    groups=consent_groups,
+                    threshold=threshold,
+                    operator_roles=operator_roles,
                 )
             except (OSError, ValueError, KeyError) as exc:
                 if args.require_consent_framework:
@@ -1264,6 +1392,7 @@ def main(argv: list[str] | None = None) -> int:
         tool_acl=tool_acl,
         telemetry=telemetry,
         notifier=notifier,
+        operator_roles=operator_roles,
     )
     # Streamable HTTP transport (R1-01), when requested.
     if args.http_listen:

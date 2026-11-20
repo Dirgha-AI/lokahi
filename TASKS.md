@@ -27,15 +27,15 @@ Rule: every task lands with an acceptance test that fails before it.
 - [ ] R1-03 RFC 9207 `iss` validation; CIMD client registration (deferred R1-02b: client-side)
 - [ ] R1-04 Per-client consent for static client IDs (confused-deputy defence) (deferred R1-02b)
 - [x] R1-05 Never pass client tokens upstream (no passthrough); RFC 8693 exchange deferred R2
-- [ ] R1-06 `_meta.approval_status` + `input_required` interrupt handling (deferred)
+- [x] R1-06 `_meta.approval_status` + `input_required` interrupt metadata (pending is resumable; timed-out/refused/not-requested are distinct; transport-level suspend/resume remains client-owned)
 - [x] R1-07 Publish gateway conformance suite (33 checks) + CI integration
 - [x] R1-28 Tool-description pinning: schema hash in manifest; drift → refuse (`tools/lokahi_toolpin.py`, 11 tests)
 
 ### W2 Identity & authority
 - [ ] R1-08 OIDC-authenticated approvers (token sub used); WebAuthn/passkey deferred R1-20b
-- [ ] R1-09 RBAC roles (steward/operator/auditor) (deferred R2)
+- [x] R1-09 Configured RBAC roles (steward/operator/auditor) applied to tool use, approval ingestion, and quorum counting; IdP role sync deferred
 - [x] R1-10 Tool ACLs per consumer and team
-- [ ] R1-11 Group quorum ("any 2 of the water board") resolved from IdP (deferred R2)
+- [x] R1-11 Named group quorum from validator config or `--operator-groups`; group must match signed manifest `n` and registered keys; IdP membership resolution deferred
 
 ### W3 Enforcement kernel
 - [ ] R1-12 Rust host binary with embedded WASM kernel; p99 < 1 ms (deferred R2)
@@ -73,6 +73,9 @@ Rule: every task lands with an acceptance test that fails before it.
 - R1-15 evidence packs + standalone verifier (`tests/test_r1_features.py`)
 - R1-28 tool pinning: schema/policy hashes, catalogue drift, gateway refusal
 - Ledger now records `action_digest` so packs need no side data
+- R1-06 approval protocol metadata distinguishes pending, approved, timed-out, refused, and not-requested; only pending escalations set `input_required`
+- R1-09 role config can deny auditor/operator execution or approval; quorum verification also filters non-steward and unassigned validators when role mode is enabled
+- R1-11 named consent groups are locally configured in validator JSON or `--operator-groups`, and validated against the manifest threshold and registered validator keys (not IdP-resolved)
 
 ### R1 exit gate
 - [ ] p99 < 1 ms (Rust host) — deferred with R1-12; Python path measured ~9 ms
