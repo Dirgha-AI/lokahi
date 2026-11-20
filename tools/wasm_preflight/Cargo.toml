@@ -9,7 +9,7 @@ repository = "https://github.com/Dirgha-AI/lokahi"
 
 [lib]
 name = "lokahi_wasm_preflight"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

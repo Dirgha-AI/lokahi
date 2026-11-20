@@ -18,7 +18,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-mod checks;
+pub mod checks;
 
 use checks::{
     regex_check::regex_check,
@@ -69,16 +69,39 @@ pub extern "C" fn lokahi_free(ptr: *mut u8, len: usize) {
 
 /// Input to the pre-flight check.
 #[derive(Deserialize, Serialize)]
-pub(crate) struct PreflightInput {
+pub struct PreflightInput {
     pub tool: String,
     pub arguments: Value,
     pub agent: Option<String>,
     pub arniko_findings: Option<Value>,
 }
 
+impl PreflightInput {
+    /// Build an input from an arbitrary JSON value, for fuzzing and tests.
+    pub fn from_value(value: serde_json::Value) -> Self {
+        let obj = value.as_object();
+        PreflightInput {
+            tool: obj
+                .and_then(|o| o.get("tool"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            arguments: obj
+                .and_then(|o| o.get("arguments"))
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            agent: obj
+                .and_then(|o| o.get("agent"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            arniko_findings: obj.and_then(|o| o.get("arniko_findings")).cloned(),
+        }
+    }
+}
+
 /// Output of the pre-flight check.
 #[derive(Serialize, Deserialize)]
-pub(crate) struct PreflightOutput {
+pub struct PreflightOutput {
     pub verdict: String,
     pub reasons: Vec<String>,
     pub layer: String,

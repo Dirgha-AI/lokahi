@@ -117,8 +117,12 @@ def merge_threshold_consent(
     if decision.verdict == FORBIDDEN and not engine_is_consent_only:
         return decision
 
-    # 2. Consent-only engine verdicts defer to the manifest threshold.
+    # 2. Consent-only engine verdicts defer to the manifest threshold, except
+    #    that a refusal already made cannot be reopened by a threshold which is
+    #    merely not-yet-met. (Found by tests/test_properties.py.)
     if engine_is_consent_only:
+        if decision.verdict == FORBIDDEN and framework_verdict == ESCALATE:
+            return as_framework(FORBIDDEN, framework_reasons)
         return as_framework(framework_verdict, framework_reasons)
 
     # 3. A framework veto freezes an engine allow/escalation.

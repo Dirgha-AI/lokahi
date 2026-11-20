@@ -1,0 +1,51 @@
+[package]
+name = "lokahi-wasm-preflight-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+lokahi-wasm-preflight = { path = ".." }
+
+[[bin]]
+name = "preflight_abi"
+path = "fuzz_targets/preflight_abi.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "regex_check"
+path = "fuzz_targets/regex_check.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "schema_check"
+path = "fuzz_targets/schema_check.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "manifest_check"
+path = "fuzz_targets/manifest_check.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "arniko_check"
+path = "fuzz_targets/arniko_check.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = true
