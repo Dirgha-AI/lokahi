@@ -124,7 +124,7 @@ jobs:
 
     - name: Install the built wheel
       run: |
-        python -m pip install dist/*.whl
+        python -m pip install "$(ls dist/*.whl)[signatures]"
         cd /tmp && python -c "import lokahi, lokahi.mcp_stdio_proxy; print('import OK', lokahi.__version__)" && lokahi-gate --self-test
 
     - name: CLI end-to-end (Ed25519 + HMAC)
