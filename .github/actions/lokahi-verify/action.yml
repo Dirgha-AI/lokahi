@@ -1,0 +1,99 @@
+name: LOKAHI verify
+description: Validate a signed boundary manifest, check a tool pin set, and verify an evidence pack
+author: Dirgha AI
+
+inputs:
+  manifest:
+    description: Path to the signed manifest JSON
+    required: true
+  manifest-key:
+    description: >-
+      Manifest verification key. Either a path to a file, or the key text.
+      Ed25519 public keys use the form ed25519pub:<64 hex>.
+    required: true
+  tool-pins:
+    description: Optional path to a signed tool pin set
+    required: false
+  tools-list:
+    description: Optional path to an observed MCP tools/list JSON (requires tool-pins)
+    required: false
+  evidence:
+    description: Optional path to an evidence pack to verify
+    required: false
+  validators:
+    description: Optional path to JSON mapping operator ids to Ed25519 public keys
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install runtime dependencies
+      shell: bash
+      run: python -m pip install --quiet "cryptography>=42.0"
+
+    - name: Validate manifest signature
+      shell: bash
+      env:
+        MANIFEST: ${{ inputs.manifest }}
+        MANIFEST_KEY: ${{ inputs.manifest-key }}
+      run: |
+        python - <<'PY'
+        import json, os, sys
+        sys.path.insert(0, "tools")
+        from lokahi import Manifest
+        from mcp_stdio_proxy import _verifier_from_text
+
+        path = os.environ["MANIFEST"]
+        key = os.environ["MANIFEST_KEY"]
+        if os.path.exists(key):
+            with open(key, encoding="ascii") as fh:
+                key = fh.read().strip()
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+        signature = raw.pop("signature", "")
+        raw.pop("signature_algorithm", None)
+        manifest = Manifest.from_dict(raw)
+        manifest.signature = signature
+        from lokahi import canonical
+        if not signature:
+            print("manifest is unsigned", file=sys.stderr); sys.exit(1)
+        verifier = _verifier_from_text(key)
+        if not verifier.verify(canonical(manifest.to_dict()), signature):
+            print("manifest signature does not verify", file=sys.stderr); sys.exit(1)
+        print(f"manifest for {manifest.node} verifies")
+        PY
+
+    - name: Check tool pins
+      if: ${{ inputs.tool-pins != '' && inputs.tools-list != '' }}
+      shell: bash
+      env:
+        PINS: ${{ inputs.tool-pins }}
+        TOOLS: ${{ inputs.tools-list }}
+      run: |
+        python tools/lokahi_toolpin.py check-manifest --pins "$PINS" --manifest "${{ inputs.manifest }}"
+        python tools/lokahi_toolpin.py verify --pins "$PINS" --tools-list "$TOOLS" --key-file "${{ inputs.manifest-key }}"
+
+    - name: Verify evidence pack
+      if: ${{ inputs.evidence != '' }}
+      shell: bash
+      env:
+        EVIDENCE: ${{ inputs.evidence }}
+        MANIFEST_KEY: ${{ inputs.manifest-key }}
+        VALIDATORS: ${{ inputs.validators }}
+      run: |
+        args=(--manifest-key-file "$MANIFEST_KEY")
+        if [ -n "$VALIDATORS" ]; then args+=(--validators "$VALIDATORS"); fi
+        python tools/lokahi_evidence.py verify "$EVIDENCE" "${args[@]}"
+
+    - name: Conformance suite
+      shell: bash
+      run: python tools/conformance.py
+
+branding:
+  icon: shield
+  color: purple

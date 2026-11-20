@@ -7,52 +7,132 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  python:
+    name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v7
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Run Core Unit Tests
+    - name: Install optional runtime dependencies
       run: |
-        python tests/test_core.py
+        python -m pip install --upgrade pip
+        python -m pip install "cryptography>=42.0" "wasmtime>=15.0"
 
-    - name: Run Experimental Decisions Tier Tests (stdlib only; tier is off by default)
-      run: |
-        python tests/test_decisions.py
+    - name: Build the WASM pre-flight module
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+    - name: cargo build (wasm)
+      working-directory: tools/wasm_preflight
+      run: cargo build --target wasm32-unknown-unknown --release
 
-    - name: Run MCP JSON-RPC 2.0 Gateway Self-Test (includes trust-boundary attacks)
-      run: |
-        python tools/mcp_stdio_proxy.py --self-test
+    - name: Core unit tests
+      run: python tests/test_core.py
 
-    - name: Run 5-Round American Emperor x LOKAHI CLI Wargame Lab
-      run: |
-        python tools/run_wargame_workshop.py
+    - name: Decisions tier tests (tier is off by default)
+      run: python tests/test_decisions.py
 
-    - name: Run Interactive Gateway Demo (11 Scenarios)
-      run: |
-        python demo.py
+    - name: Threshold consent tests
+      run: python tests/test_threshold_consent.py
 
-    - name: Run Editorial Desk Pilot Example (end-to-end through the gateway)
-      run: |
-        python examples/editorial_desk_demo.py
+    - name: Fail-secure and WebXR tests
+      run: python tests/test_failsecure.py
 
-    - name: Run Red-Team Benchmark & Baseline Harness (50 Adversarial + 200 Benign)
-      run: |
-        python tools/run_evals.py
+    - name: Audit regression tests (C1-C4, H1-H3, M1, hardening)
+      run: python tests/test_audit_regressions.py
 
-    - name: Run Ghostproof-40 Hollow-Oversight Benchmark (40 Scenarios + 100-Step Trace)
-      run: |
-        python tools/run_ghostproof_evals.py
+    - name: R1 feature tests (tool pinning, evidence packs, HTTP transport, OAuth, ACL)
+      run: python tests/test_r1_features.py
 
-    - name: Run Kinetic Ahimsa Embodied Robotics Verification (90 Adversarial + 90 Benign)
+    - name: Telemetry tests (OTLP, Splunk, Elastic, webhook)
+      run: python tests/test_telemetry.py
+
+    - name: Approval tests (links, channels, /approve)
+      run: python tests/test_approvals.py
+
+    - name: Policy pack tests
+      run: python tests/test_policy_packs.py
+
+    - name: Property tests (merge precedence, canonical stability)
+      run: python tests/test_properties.py
+
+    - name: Conformance suite
+      run: python tools/conformance.py
+
+    - name: MCP gateway self-test (includes trust-boundary attacks)
+      run: python tools/mcp_stdio_proxy.py --self-test
+
+    - name: Wargame lab
+      run: python tools/run_wargame_workshop.py
+
+    - name: Gateway demo
+      run: python demo.py
+
+    - name: Editorial desk pilot
+      run: python examples/editorial_desk_demo.py
+
+    - name: Red-team benchmark (50 adversarial + 200 benign)
+      run: python tools/run_evals.py
+
+    - name: Ghostproof benchmark
+      run: python tools/run_ghostproof_evals.py
+
+    - name: Kinetic Ahimsa robotics verification
+      run: python tools/run_kinetic_evals.py
+
+  rust:
+    name: Rust WASM kernel
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+    - name: Unit tests
+      working-directory: tools/wasm_preflight
+      run: cargo test --release
+    - name: Build for wasm32
+      working-directory: tools/wasm_preflight
+      run: cargo build --target wasm32-unknown-unknown --release
+
+  packaging:
+    name: Packaging and CLI
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Validate pyproject
+      run: python -c "import tomllib,sys; tomllib.load(open('pyproject.toml','rb')); print('pyproject OK')"
+
+    - name: Build wheel
       run: |
-        python tools/run_kinetic_evals.py
+        python -m pip install --upgrade pip build
+        python -m build --wheel
+
+    - name: Install the built wheel
+      run: |
+        python -m pip install dist/*.whl
+        cd /tmp && python -c "import lokahi, lokahi.mcp_stdio_proxy; print('import OK', lokahi.__version__)" && lokahi-gate --self-test
+
+    - name: CLI end-to-end (Ed25519 + HMAC)
+      run: python tests/test_audit_regressions.py TestC3CLIFlows
+
+    - name: No build artifacts staged
+      run: |
+        if git status --porcelain | grep -E 'tools/wasm_preflight/target|\.wasm$'; then
+          echo "build artifacts are not ignored"; exit 1
+        fi
+        echo "clean"

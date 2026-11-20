@@ -1,0 +1,14 @@
+apiVersion: v2
+name: lokahi
+description: Consent and authority gateway for consequential agent actions
+type: application
+version: 0.1.0
+appVersion: "1.1.0"
+home: https://github.com/Dirgha-AI/lokahi
+sources:
+  - https://github.com/Dirgha-AI/lokahi
+keywords:
+  - ai-safety
+  - mcp
+  - consent
+  - governance

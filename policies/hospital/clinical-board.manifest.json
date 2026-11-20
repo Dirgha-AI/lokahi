@@ -1,0 +1,31 @@
+{
+  "node": "hospital-clinical-board",
+  "informational": ["patient_ref", "care_plan_id", "medication_list", "ward"],
+  "forbidden_targets": ["hiv_status", "mental_health_history", "insurance_profit_score"],
+  "jurisdiction": "IN-DL",
+  "residency": ["IN"],
+  "exceptions": {"safety_critical": 1, "window_hours": 24},
+  "expires": "2027-12-31T00:00:00Z",
+  "steward": "did:web:hospital.example/clinical-board",
+  "approval_window_seconds": 3600,
+  "consent_threshold": {"m": 2, "n": 3},
+  "tools": {
+    "read_care_plan": {
+      "class": "read",
+      "args": {"patient_ref": "patient_ref", "care_plan_id": "care_plan_id"}
+    },
+    "change_care_plan": {
+      "class": "irreversible",
+      "population_affecting": true,
+      "args": {"patient_ref": "patient_ref", "care_plan_id": "care_plan_id"}
+    },
+    "send_discharge_summary": {
+      "class": "irreversible",
+      "args": {"patient_ref": "patient_ref", "ward": "ward"}
+    },
+    "order_medication": {
+      "class": "irreversible",
+      "args": {"patient_ref": "patient_ref", "medication_list": "medication_list"}
+    }
+  }
+}

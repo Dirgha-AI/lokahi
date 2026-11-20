@@ -3,7 +3,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
   <a href="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml"><img src="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="tests/test_core.py"><img src="https://img.shields.io/badge/unit%20tests-70%20passed-brightgreen.svg" alt="Unit tests: 70 passed"></a>
+  <a href="tests/test_core.py"><img src="https://img.shields.io/badge/tests-270%20passed-brightgreen.svg" alt="Tests: 270 passed"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/protocol-MCP-purple.svg" alt="Protocol: MCP"></a>
 </p>
 
@@ -13,7 +13,9 @@ LOKAHI is a small gate that sits between an AI agent and the tools it uses. A co
 
 The name comes from the Hawaiian word *lōkahi*, meaning unity, agreement or harmony. LOKAHI lets the actions that matter go ahead only when separate people agree. No single party decides alone, and neither does the agent.
 
-**Status:** v0.1.4 is a reference implementation for review and pilots. It hasn't been independently reviewed, so don't rely on it to protect real systems yet. The [known limits](#known-limits) say exactly what's missing. v0.1.4 adds an [experimental learned decisions tier](#experimental-learned-decisions-tier), off by default.
+**Status:** v1.1.0 is a reference implementation for review and pilots. It has **not** been independently security-reviewed, so do not rely on it to protect real systems yet. A pre-release audit found four critical defects; all are fixed and covered by [`tests/test_audit_regressions.py`](tests/test_audit_regressions.py) — see [`AUDIT_REPORT.md`](AUDIT_REPORT.md) for the findings of record and [`ROADMAP.md`](ROADMAP.md) for what remains before production.
+
+The runtime is a four-layer cascade: a WASM deterministic pre-flight, the 15-rule engine, m-of-n Ed25519 consent, then a fail-secure state with human WebXR handoff. The [learned decisions tier](#experimental-learned-decisions-tier) is **experimental and is not part of the safety claim**; the guarantee comes from the deterministic rules and the consent framework.
 
 ## How it works
 
@@ -56,13 +58,16 @@ Everything is Python 3.10 or later, with no dependencies:
 
 Read these before you depend on LOKAHI:
 
-1. **Shared-secret signatures.** v0.1.4 signs with HMAC-SHA256, a shared-secret scheme. Whoever checks a signature also holds the key, so the gate could forge approvals. Public-key signatures (Ed25519) come next.
-2. **It decides but doesn't relay.** LOKAHI returns a decision; your MCP client or wrapper sends allowed calls to the tool. It doesn't yet inspect what tools send back, which is where hidden instructions (indirect prompt injections) usually arrive.
-3. **Approval count is fixed at three people.** That suits a public utility but is heavy for a small team. Per-tool counts are planned.
-4. **Approval windows reset on restart.** A restart opens a new window; it never approves anything.
-5. **No emergency override through the gate.** The engine supports emergency declarations; the MCP gate doesn't accept them.
-6. **Distinct people are assumed, not proven.** Two different approver IDs are trusted to be two different people.
-7. **No outside review yet.** No independent security or cryptographic review has been done.
+1. **No independent security review.** The audit at [`AUDIT_REPORT.md`](AUDIT_REPORT.md) is internal. No external cryptographic or safety review has been completed.
+2. **Ed25519 is not threshold signing.** Each validator signs independently and the gate counts distinct valid signatures. There is no key splitting and no FROST group key; a compromised gate operator can see every signature.
+3. **It decides but does not relay.** LOKAHI returns a decision; your MCP client or wrapper sends allowed calls to the tool. It does not yet inspect tool responses (indirect prompt injection arrives there), and it does not pin tool descriptions, so a server can change a tool schema after approval.
+4. **stdio only.** There is no OAuth 2.1 / Streamable HTTP resource-server support yet, so it cannot front remote MCP servers on its own.
+5. **Approval windows reset on restart.** A restart opens a new window; it never approves anything, but in-progress windows are lost.
+6. **Distinct people are assumed, not proven.** Two different approver IDs are trusted to be two different people. Disjointness attestation is roadmap item R3.
+7. **The ledger is a local JSONL file** written by one process. It is hash-chained but not Merkle-proved, not witness-cosigned, and not remotely immutable.
+8. **The learned decisions tier is experimental.** It was trained on synthetic data, its labels have not been human-reviewed, and it has never seen real agent traffic. It is excluded from the safety claim.
+9. **Performance.** The WASM checks run in microseconds inside the module; the Python bridge adds roughly 9 ms per call. A Rust host is roadmap item R1-12.
+10. **No SOC 2, no pen test, no support SLA.** Enterprise operational controls are roadmap items R2.
 
 ## Try it
 
@@ -78,7 +83,19 @@ python demo.py                               # engine walkthrough, 11 scenarios
 python tools/run_evals.py                    # 50 scenarios and 200 benign tasks
 ```
 
-Nothing to install: each command runs from a fresh clone.
+The core needs nothing installed: each command runs from a fresh clone. Ed25519 keys, the newer test suites and the conformance suite need `pip install "cryptography>=42.0"`.
+
+Or install it from PyPI:
+
+```bash
+pip install "lokahi[signatures]"   # or plain `pip install lokahi` for the dependency-free core
+lokahi-gate --self-test           # the same gate scenarios
+lokahi-conformance                 # the published conformance checks
+lokahi-sign --help                 # make keys and sign a rules file
+lokahi-approve --help              # sign one person's yes for one exact call
+```
+
+In Python: `from lokahi import Manifest, Signer, evaluate`.
 
 ## Gate MCP tool calls
 

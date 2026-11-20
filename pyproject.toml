@@ -1,28 +1,56 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lokahi-protocol"
-version = "0.1.4"
-description = "Boundary Enforcement and Disjoint-Consent Protocol for Autonomous Agent Collectives (Operationalizing Ahimsa as a Timeout Rule)"
+name = "lokahi"
+version = "1.1.0"
+description = "Checks what an AI agent is about to do against rules its community wrote, before it runs. Silence means no."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
   {name = "Salik Shah"},
   {name = "Sabin Ranjit"}
 ]
-keywords = ["ai-safety", "multi-agent", "boundaries", "mcp-gateway", "cooperative-ai", "ahimsa", "astra", "governance"]
+keywords = ["ai-safety", "ai-agents", "mcp", "mcp-gateway", "policy", "guardrails", "consent", "ahimsa", "wasm"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+]
+# The rule engine and MCP gate have no dependencies. Extras add optional layers.
 dependencies = []
+
+[project.optional-dependencies]
+signatures = ["cryptography>=42.0"]
+wasm = ["wasmtime>=15.0"]
+slm = ["onnxruntime>=1.17", "llama-cpp-python>=0.2", "mlx-lm>=0.5"]
+all = ["cryptography>=42.0", "wasmtime>=15.0"]
+dev = ["pytest>=7.0"]
 
 [project.urls]
 Homepage = "https://github.com/Dirgha-AI/lokahi"
 Repository = "https://github.com/Dirgha-AI/lokahi"
+Changelog = "https://github.com/Dirgha-AI/lokahi/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Dirgha-AI/lokahi/issues"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["tools*"]
+[project.scripts]
+lokahi-gate = "lokahi.mcp_stdio_proxy:main"
+lokahi-gateway = "lokahi.mcp_stdio_proxy:main"
+lokahi-sign = "lokahi.lokahi_sign:main"
+lokahi-approve = "lokahi.lokahi_approve:main"
+lokahi-conformance = "lokahi.conformance:main"
+
+[tool.setuptools]
+package-dir = {"lokahi" = "tools"}
+packages = ["lokahi", "lokahi.decisions"]
 
 [tool.setuptools.package-data]
-"tools.decisions" = ["model.json"]
+"lokahi.decisions" = ["model.json"]

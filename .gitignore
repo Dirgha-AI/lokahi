@@ -29,3 +29,7 @@ _internal/
 
 # Scratch folder used by tools/decisions/scripts/generate_seed.py
 data/decisions/raw/_cwd/
+
+# Rust build artifacts (the compiled WASM lives in releases, not in git)
+tools/wasm_preflight/target/
+Cargo.lock.bak

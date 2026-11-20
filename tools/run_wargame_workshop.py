@@ -28,7 +28,7 @@ import time
 from typing import Any
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-if HERE not in sys.path:
+if __package__ != "lokahi" and HERE not in sys.path:  # source checkout only
     sys.path.insert(0, HERE)
 
 from ghostproof import (

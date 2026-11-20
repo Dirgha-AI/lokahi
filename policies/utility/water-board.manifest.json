@@ -1,0 +1,38 @@
+{
+  "node": "utility-water-board",
+  "informational": ["meter_id", "usage_liters", "service_address", "crew_id"],
+  "forbidden_targets": ["protest_history", "residency_status", "caste", "religion"],
+  "jurisdiction": "IN-DL",
+  "residency": ["IN"],
+  "exceptions": {"safety_critical": 2, "window_hours": 24},
+  "expires": "2027-12-31T00:00:00Z",
+  "steward": "did:web:water-board.example/stewards",
+  "approval_window_seconds": 1800,
+  "consent_threshold": {"m": 2, "n": 3},
+  "physical_envelope": {
+    "max_contact_force_n": 6.1,
+    "max_cartesian_velocity_ms": 0.5,
+    "max_decel_ms2": 1.0,
+    "workspace_bounds_m": [0.0, 2.0, -1.0, 1.0, 0.2, 2.4]
+  },
+  "tools": {
+    "read_meter": {
+      "class": "read",
+      "args": {"meter_id": "meter_id", "usage_liters": "usage_liters"}
+    },
+    "cutoff_water_valve": {
+      "class": "irreversible",
+      "population_affecting": true,
+      "args": {"meter_id": "meter_id"}
+    },
+    "dispatch_crew": {
+      "class": "irreversible",
+      "args": {"crew_id": "crew_id", "meter_id": "meter_id"}
+    },
+    "send_usage_to_cloud": {
+      "class": "write",
+      "stores_in": ["US"],
+      "args": {"meter_id": "meter_id"}
+    }
+  }
+}
