@@ -327,5 +327,146 @@ class TestEvidencePacks(unittest.TestCase):
             self.assertIn("EVIDENCE VERIFIED", r.stdout)
 
 
+# ---------------------------------------------------------------------------
+# R1-01 Streamable HTTP transport
+# ---------------------------------------------------------------------------
+
+class TestHttpTransport(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import threading
+
+        from lokahi_http import build_server
+
+        cls.signer = Signer(KEY)
+        cls.manifest = _manifest(cls.signer)
+        cls.gw = LokahiMCPGateway(
+            cls.manifest, cls.signer, approvers={}, approval_store=ApprovalStore()
+        )
+        cls.server = build_server(cls.gw, "127.0.0.1", 0, bearer_tokens=["tok-1"])
+        cls.port = cls.server.server_address[1]
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def _post(self, body, token="tok-1", accept="application/json"):
+        import http.client
+
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        headers = {"Content-Type": "application/json", "Accept": accept}
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        conn.request("POST", "/mcp", json.dumps(body), headers)
+        response = conn.getresponse()
+        payload = response.read().decode("utf-8")
+        conn.close()
+        return response.status, payload
+
+    def _get(self, path):
+        import http.client
+
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path)
+        response = conn.getresponse()
+        payload = response.read().decode("utf-8")
+        conn.close()
+        return response.status, payload
+
+    def test_allowed_call_over_http(self):
+        status, body = self._post(_call("read_meter", {"meter_id": "M-1"}))
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["allowed"])
+
+    def test_refusal_is_a_decision_not_a_transport_error(self):
+        status, body = self._post(
+            _call("read_meter", {"meter_id": "M-1", "protest_history": True})
+        )
+        self.assertEqual(status, 200)
+        payload = json.loads(body)
+        self.assertFalse(payload["allowed"])
+        reasons = payload["error"]["data"]["reasons"]
+        self.assertTrue(any("protest_history" in r for r in reasons), reasons)
+
+    def test_bearer_auth_required(self):
+        self.assertEqual(self._post(_call("read_meter", {"meter_id": "M-1"}), token=None)[0], 401)
+        self.assertEqual(self._post(_call("read_meter", {"meter_id": "M-1"}), token="nope")[0], 401)
+
+    def test_sse_accept_header(self):
+        status, body = self._post(
+            _call("read_meter", {"meter_id": "M-1"}), accept="text/event-stream"
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(body.startswith("event: message\ndata: "))
+
+    def test_batch_rejected(self):
+        status, _ = self._post([_call("read_meter", {"meter_id": "M-1"})])
+        self.assertEqual(status, 400)
+
+    def test_health_readiness_metrics(self):
+        self.assertEqual(self._get("/healthz")[0], 200)
+        status, body = self._get("/readyz")
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["ready"])
+        status, body = self._get("/metrics")
+        self.assertEqual(status, 200)
+        self.assertIn("lokahi_requests_total", body)
+
+    def test_parse_error(self):
+        import http.client
+
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request(
+            "POST", "/mcp", b"{not json",
+            {"Content-Type": "application/json", "Authorization": "Bearer tok-1"},
+        )
+        response = conn.getresponse()
+        body = json.loads(response.read().decode())
+        conn.close()
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], -32700)
+
+
+class TestHttpFailSecure(unittest.TestCase):
+    def test_locked_gateway_refuses_over_http_and_reports_not_ready(self):
+        import http.client
+        import threading
+
+        from lokahi_http import build_server
+
+        signer = Signer(KEY)
+        manifest = _manifest(signer)
+        gw = LokahiMCPGateway(manifest, signer, approvers={}, approval_store=ApprovalStore())
+        server = build_server(gw, "127.0.0.1", 0)
+        port = server.server_address[1]
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            gw.failsecure.enter_secure_state("test_lock", now=NOW)
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("POST", "/mcp", json.dumps(_call("read_meter", {"meter_id": "M-1"})),
+                         {"Content-Type": "application/json"})
+            response = conn.getresponse()
+            payload = json.loads(response.read().decode())
+            conn.close()
+            self.assertFalse(payload["allowed"])
+            self.assertTrue(
+                any(r.startswith("secure_state_active") for r in payload["error"]["data"]["reasons"])
+            )
+
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("GET", "/readyz")
+            response = conn.getresponse()
+            body = json.loads(response.read().decode())
+            conn.close()
+            self.assertEqual(response.status, 503)
+            self.assertFalse(body["ready"])
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
 if __name__ == "__main__":
     unittest.main()

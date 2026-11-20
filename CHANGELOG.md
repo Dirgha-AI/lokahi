@@ -2,6 +2,14 @@
 
 ## Unreleased — R1 (v1.1)
 
+- **R1-01 Streamable HTTP transport** (`tools/lokahi_http.py`): one `/mcp`
+  endpoint accepting JSON-RPC over POST, replying with JSON or a single-message
+  `text/event-stream`; stateless (no session id, per the 2026-07-28 revision).
+  `/healthz`, `/readyz` (503 while the fail-secure lock is engaged) and
+  Prometheus `/metrics`. Bearer-token allowlist; the CLI refuses to bind a
+  non-loopback address without one until OAuth 2.1 resource-server support
+  (R1-02) lands. Batch requests are rejected explicitly rather than
+  half-supported. CLI: `--http-listen HOST:PORT`, `--http-token`. 8 tests.
 - **R1-28 tool pinning** (`tools/lokahi_toolpin.py`): signed pin sets record the
   hash of each tool's approved schema and its manifest policy. `pin`, `verify`
   and `check-manifest` commands; drift in a catalogue (added/removed/changed

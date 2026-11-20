@@ -997,6 +997,14 @@ def main(argv: list[str] | None = None) -> int:
         default=False,
         help="Require a tool pin set; refuse to start without one (fail closed).",
     )
+    parser.add_argument(
+        "--http-listen",
+        help="Serve MCP Streamable HTTP on HOST:PORT instead of stdio (e.g. 127.0.0.1:8787).",
+    )
+    parser.add_argument(
+        "--http-token",
+        help="Comma-separated bearer token allowlist for HTTP. Required for non-loopback addresses. Or set LOKAHI_HTTP_TOKEN.",
+    )
     args = parser.parse_args(argv)
 
     if args.self_test or not args.manifest:
@@ -1117,6 +1125,28 @@ def main(argv: list[str] | None = None) -> int:
         tool_pins=tool_pins,
         require_pins=args.require_pins,
     )
+    # Streamable HTTP transport (R1-01), when requested.
+    if args.http_listen:
+        try:
+            from lokahi_http import HttpTransportError, parse_listen, serve
+        except ImportError as exc:  # pragma: no cover
+            return refuse(f"HTTP transport unavailable: {exc}")
+        try:
+            host, port = parse_listen(args.http_listen)
+        except HttpTransportError as exc:
+            return refuse(str(exc))
+
+        raw_tokens = args.http_token or os.environ.get("LOKAHI_HTTP_TOKEN") or ""
+        tokens = [t.strip() for t in raw_tokens.split(",") if t.strip()]
+        loopback = host in ("127.0.0.1", "localhost", "::1")
+        if not loopback and not tokens:
+            return refuse(
+                "refusing to listen on a non-loopback address without --http-token "
+                "(OAuth 2.1 resource-server support is not implemented yet)"
+            )
+        serve(gw, host, port, bearer_tokens=tokens)
+        return 0
+
     for line in sys.stdin:
         line = line.strip()
         if not line:

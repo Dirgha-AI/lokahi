@@ -51,6 +51,9 @@ jobs:
     - name: Audit regression tests (C1-C4, H1-H3, M1, hardening)
       run: python tests/test_audit_regressions.py
 
+    - name: R1 feature tests (tool pinning, evidence packs, HTTP transport)
+      run: python tests/test_r1_features.py
+
     - name: MCP gateway self-test (includes trust-boundary attacks)
       run: python tools/mcp_stdio_proxy.py --self-test
 

@@ -22,7 +22,7 @@ Rule: every task lands with an acceptance test that fails before it.
 ## R1 — Parity (v1.1) — 12 weeks
 
 ### W1 Protocol & transport
-- [ ] R1-01 Streamable HTTP transport (stateless, MCP 2026-07-28) + keep stdio
+- [x] R1-01 Streamable HTTP transport (stateless, no sessions) + keep stdio (`tools/lokahi_http.py`)
 - [ ] R1-02 OAuth 2.1 resource server: RFC 9728 PRM, PKCE, RFC 8707 resource indicators
 - [ ] R1-03 RFC 9207 `iss` validation; CIMD client registration
 - [ ] R1-04 Per-client consent for static client IDs (confused-deputy defence)
@@ -69,6 +69,7 @@ Rule: every task lands with an acceptance test that fails before it.
 - [ ] Book external crypto review #1
 
 ### Completed in R1 so far
+- R1-01 Streamable HTTP: `/mcp` POST (JSON or SSE), `/healthz`, `/readyz`, `/metrics`, bearer allowlist, locked-gateway 503
 - R1-15 evidence packs + standalone verifier (`tests/test_r1_features.py`)
 - R1-28 tool pinning: schema/policy hashes, catalogue drift, gateway refusal
 - Ledger now records `action_digest` so packs need no side data
