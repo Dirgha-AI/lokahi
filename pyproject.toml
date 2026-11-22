@@ -4,17 +4,35 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lokahi"
-version = "1.1.0"
-description = "Checks what an AI agent is about to do against rules its community wrote, before it runs. Silence means no."
+version = "1.2.0"
+description = "Model Context Protocol (MCP) runtime security gate and deterministic policy firewall for AI agents. Fail-closed: silence means no."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [
-  {name = "Salik Shah"},
+  {name = "Salik Shah", email = "salik.shah@gmail.com"}
+]
+maintainers = [
   {name = "Sabin Ranjit"}
 ]
-keywords = ["ai-safety", "ai-agents", "mcp", "mcp-gateway", "policy", "guardrails", "consent", "ahimsa", "wasm"]
+keywords = [
+  "ai-safety",
+  "ai-agents",
+  "mcp",
+  "model-context-protocol",
+  "mcp-gateway",
+  "mcp-security",
+  "claude-code",
+  "cursor",
+  "policy-engine",
+  "guardrails",
+  "consent",
+  "ahimsa",
+  "ed25519",
+  "wasm",
+  "runtime-security"
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",

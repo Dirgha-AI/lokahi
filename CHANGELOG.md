@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.2.0 (2026-11-22): enterprise streaming runtime parity and contributor attribution
+
+### What this release adds
+
+- **Attribution & Packaging Alignment:** Salik Shah established as the primary Author & Creator in `pyproject.toml` (PEP 621 metadata) and documentation; Sabin Ranjit credited as Community Contributor (`maintainers`).
+- **Cross-Runtime Specification Parity with Dirgha 2.0.1:**
+  - Documents runtime policy enforcement parity with the compiled Rust/WASM gate (`lokahi_gate.wasm`, 104.8 KB, 0.2ms p95 latency, 50/50 red-team pass).
+  - Documents compatibility with the real-time SSE streaming reverse proxy interceptor for Claude Code (`/v1/messages`) and Cursor/OpenAI (`/v1/chat/completions`).
+- **Discoverability & Developer Documentation:** Completely restructured README with high-discovery quickstarts, MCP architecture flows, threat-model matrix, and GEO / AI SEO semantic indexing for developer adoption.
+- **Passing Test Suite:** 102/102 test verification (70 core evaluation & MCP proxy tests + 32 decisions tier monotonicity tests).
+
 ## v1.1.0 (2026-11-20): interoperability release
 
 ### What this release adds

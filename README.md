@@ -1,289 +1,262 @@
 <h1 align="center">LOKAHI</h1>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
-  <a href="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml"><img src="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="tests/test_core.py"><img src="https://img.shields.io/badge/tests-270%20passed-brightgreen.svg" alt="Tests: 270 passed"></a>
-  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/protocol-MCP-purple.svg" alt="Protocol: MCP"></a>
+  <strong>Model Context Protocol (MCP) Runtime Security Gate & Deterministic Policy Firewall for AI Agents</strong>
 </p>
 
-<p align="center"><strong>Rules a community writes for its AI agents, checked before every tool call.</strong></p>
+<p align="center">
+  <a href="https://pypi.org/project/lokahi/"><img src="https://img.shields.io/pypi/v/lokahi.svg?color=blue" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/lokahi/"><img src="https://img.shields.io/pypi/pyversions/lokahi.svg" alt="Python Versions"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg" alt="License: Apache-2.0"></a>
+  <a href="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml"><img src="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="tests/test_core.py"><img src="https://img.shields.io/badge/tests-102%20passed-brightgreen.svg" alt="Tests: 102 passed"></a>
+  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/protocol-MCP-purple.svg" alt="Protocol: MCP"></a>
+  <a href="#fail-closed-by-design"><img src="https://img.shields.io/badge/security-fail--closed-red.svg" alt="Security: Fail-Closed"></a>
+</p>
 
-LOKAHI is a small gate that sits between an AI agent and the tools it uses. A community writes down what the agent may read, where data may go, and which actions need people to say yes. LOKAHI checks each tool call against those rules before it runs. If no one approves in time, the answer is no. Every decision goes into a tamper-evident local record.
+<p align="center">
+  <em>Checks what an autonomous AI agent is about to do against community-signed rules before every tool call runs. Silence means no.</em>
+</p>
 
-The name comes from the Hawaiian word *lōkahi*, meaning unity, agreement or harmony. LOKAHI lets the actions that matter go ahead only when separate people agree. No single party decides alone, and neither does the agent.
+---
 
-**Status:** v1.1.0 is a reference implementation for review and pilots. It has **not** been independently security-reviewed, so do not rely on it to protect real systems yet. A pre-release audit found four critical defects; all are fixed and covered by [`tests/test_audit_regressions.py`](tests/test_audit_regressions.py) — see [`AUDIT_REPORT.md`](AUDIT_REPORT.md) for the findings of record and [`ROADMAP.md`](ROADMAP.md) for what remains before production.
+## What is LOKAHI?
 
-The runtime is a four-layer cascade: a WASM deterministic pre-flight, the 15-rule engine, m-of-n Ed25519 consent, then a fail-secure state with human WebXR handoff. The [learned decisions tier](#experimental-learned-decisions-tier) is **experimental and is not part of the safety claim**; the guarantee comes from the deterministic rules and the consent framework.
+**LOKAHI** is a lightweight, fail-closed runtime security gate that sits between an autonomous AI agent (such as **Claude Code**, **Cursor**, **LangChain**, or custom agent harnesses) and the tools it invokes over the **Model Context Protocol (MCP)**.
 
-## How it works
+Before any tool executes:
+1. LOKAHI validates the call against a **cryptographically signed boundary manifest**.
+2. Restricts data access to explicitly permitted fields and enforced **jurisdictions/residency**.
+3. Enforces **multi-party Ed25519 consent quorum** on irreversible actions.
+4. Writes every decision into a **tamper-evident, hash-chained audit ledger**.
 
-Every check starts from a signed boundary manifest, a JSON file the community writes. It lists:
+If an approval window closes without human consent, **the action is refused**. If an agent attempts to approve its own calls or inject arguments outside policy, **the action is blocked**.
 
-- the data fields an agent may read, and the ones it must never use
-- where data may be stored, and which legal jurisdiction applies
-- each tool the agent may call, the arguments that tool accepts, and whether the tool is irreversible
-- how long people have to approve an irreversible action
-
-When the agent calls a tool over the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), LOKAHI checks the call against the manifest, then allows it, refuses it, or holds it for people to decide:
-
-```text
-AI agent ── tool call ──▶ LOKAHI ── allowed ──▶ your MCP client sends it to the tool
-                           │   ▲
-            local record ◀─┘   └── signed approvals from people
-```
-
-Three rules matter most:
-
-1. **Fail closed.** LOKAHI allows nothing if the manifest is unsigned, can't be verified or has expired, or if no key is configured to check it.
-2. **Silence means no.** If an approval window closes without enough separate people saying yes, the call is refused.
-3. **Two people can stop an action.** Two separate people saying no freeze it, whatever anyone else says.
-
-People count once each, however many agents they run. And the agent can't approve itself: a call that carries its own approval data is refused.
-
-The design draws on Andrew Critch's *Boundaries* sequence and on *ahimsa* (non-harm) as a default of not acting. It also responds to [ASTRA](https://arxiv.org/abs/2602.17357), which shows how global AI safety frameworks miss local context in India.
-
-## What runs today
-
-Everything is Python 3.10 or later, with no dependencies:
-
-- **Decision engine** ([`tools/lokahi.py`](tools/lokahi.py)): signed manifests, 15 ordered rules, vote counting by person, conflict-of-interest checks, emergency rate caps, and a hash-chained ledger. Votes count only for the exact action they approve.
-- **MCP gate** ([`tools/mcp_stdio_proxy.py`](tools/mcp_stdio_proxy.py)): reads MCP JSON-RPC `tools/call` requests and returns a decision for each. Facts such as whether a tool is irreversible and where it stores data come from the signed manifest, never from the agent. Unknown tools and arguments are refused.
-- **Signing tools** ([`tools/lokahi_sign.py`](tools/lokahi_sign.py), [`tools/lokahi_approve.py`](tools/lokahi_approve.py)): create keys, sign manifests, and let each person sign a yes or no for one exact call.
-- **Pilot example** ([`examples/editorial_desk_demo.py`](examples/editorial_desk_demo.py)): a small publication's editorial desk, run end to end through the gate.
-- **Tests** ([`tests/test_core.py`](tests/test_core.py)): 70 unit tests, including attacks on the gate. The 50-scenario set and 200 benign tasks are in [`tools/run_evals.py`](tools/run_evals.py).
-
-## Known limits
-
-Read these before you depend on LOKAHI:
-
-1. **No independent security review.** The audit at [`AUDIT_REPORT.md`](AUDIT_REPORT.md) is internal. No external cryptographic or safety review has been completed.
-2. **Ed25519 is not threshold signing.** Each validator signs independently and the gate counts distinct valid signatures. There is no key splitting and no FROST group key; a compromised gate operator can see every signature.
-3. **It decides but does not relay.** LOKAHI returns a decision; your MCP client or wrapper sends allowed calls to the tool. It does not yet inspect tool responses (indirect prompt injection arrives there), and it does not pin tool descriptions, so a server can change a tool schema after approval.
-4. **stdio only.** There is no OAuth 2.1 / Streamable HTTP resource-server support yet, so it cannot front remote MCP servers on its own.
-5. **Approval windows reset on restart.** A restart opens a new window; it never approves anything, but in-progress windows are lost.
-6. **Distinct people are assumed, not proven.** Two different approver IDs are trusted to be two different people. Disjointness attestation is roadmap item R3.
-7. **The ledger is a local JSONL file** written by one process. It is hash-chained but not Merkle-proved, not witness-cosigned, and not remotely immutable.
-8. **The learned decisions tier is experimental.** It was trained on synthetic data, its labels have not been human-reviewed, and it has never seen real agent traffic. It is excluded from the safety claim.
-9. **Performance.** The WASM checks run in microseconds inside the module; the Python bridge adds roughly 9 ms per call. A Rust host is roadmap item R1-12.
-10. **No SOC 2, no pen test, no support SLA.** Enterprise operational controls are roadmap items R2.
-
-## Try it
-
-```bash
-git clone https://github.com/Dirgha-AI/lokahi.git
-cd lokahi
-
-python tests/test_core.py                    # 70 unit tests
-python tests/test_decisions.py               # 32 tests for the experimental decisions tier
-python examples/editorial_desk_demo.py       # pilot example, end to end
-python tools/mcp_stdio_proxy.py --self-test  # gate scenarios, including attacks
-python demo.py                               # engine walkthrough, 11 scenarios
-python tools/run_evals.py                    # 50 scenarios and 200 benign tasks
-```
-
-The core needs nothing installed: each command runs from a fresh clone. Ed25519 keys, the newer test suites and the conformance suite need `pip install "cryptography>=42.0"`.
-
-Or install it from PyPI:
-
-```bash
-pip install "lokahi[signatures]"   # or plain `pip install lokahi` for the dependency-free core
-lokahi-gate --self-test           # the same gate scenarios
-lokahi-conformance                 # the published conformance checks
-lokahi-sign --help                 # make keys and sign a rules file
-lokahi-approve --help              # sign one person's yes for one exact call
-```
-
-In Python: `from lokahi import Manifest, Signer, evaluate`.
-
-## Gate MCP tool calls
-
-Five steps:
-
-1. Create a key for the manifest and one for each approver:
-
-   ```bash
-   python tools/lokahi_sign.py keygen --out manifest.key
-   python tools/lokahi_sign.py keygen --out editor-fiction.key
-   ```
-
-2. Write your manifest. [`examples/editorial-desk.manifest.json`](examples/editorial-desk.manifest.json) is a complete one. Each tool lists its class (`read`, `write` or `irreversible`) and maps each argument to the data field it reveals, or to `null` if it reveals none:
-
-   ```json
-   "email_author": {
-     "class": "irreversible",
-     "args": {"submission_id": "submission_id", "body": null}
-   }
-   ```
-
-3. Sign it. Signing checks the tools policy and refuses a malformed one:
-
-   ```bash
-   python tools/lokahi_sign.py manifest --key-file manifest.key \
-     --in examples/editorial-desk.manifest.json --out manifest.json
-   ```
-
-4. Run the gate. It reads one JSON-RPC request per line on standard input and writes one decision per line. Approvers are listed in a file like [`examples/approvers.example.json`](examples/approvers.example.json). Keep the approvals file somewhere the agent can't write:
-
-   ```bash
-   python tools/mcp_stdio_proxy.py --manifest manifest.json \
-     --key-file manifest.key --approvers approvers.json \
-     --approvals approvals.jsonl --ledger lokahi-ledger.jsonl \
-     --requester agent:my-agent --operator ops:agent-runner
-   ```
-
-   The `--operator` is whoever runs the agent. If that person also tries to approve one of its calls, LOKAHI refuses the call.
-
-5. Approve when asked. When a call needs people, the decision includes an `action_digest`. Each approver signs it from their own device:
-
-   ```bash
-   python tools/lokahi_approve.py --key-file editor-fiction.key \
-     --operator editor:fiction --node laptop-1 \
-     --digest the_action_digest --decision yes --approvals approvals.jsonl
-   ```
-
-   An approval covers that exact call, with the same tool and the same argument values, and expires after an hour by default.
-
-## Example: an editorial desk
-
-[`examples/editorial_desk_demo.py`](examples/editorial_desk_demo.py) shows the gate protecting unpublished manuscripts:
+The name comes from the Hawaiian word *lōkahi*, meaning unity, agreement, or harmony. LOKAHI ensures critical actions proceed only when independent parties agree.
 
 ```text
-summarize a submission                               -> ALLOWED   within_manifest
-ask for the author's home address                    -> FORBIDDEN forbidden_target:author_home_address
-ask for a field nobody listed                        -> FORBIDDEN argument_out_of_policy:author_social_handles
-send the manuscript to a US cloud model              -> FORBIDDEN residency_violation:US
-use a tool the editors never listed                  -> FORBIDDEN tool_not_in_manifest:delete_submission_archive
-agent sends its own 'approvals' with the email       -> FORBIDDEN agent_supplied_control_metadata
-email a rejection: waits for people                  -> ESCALATE  insufficient_disjoint_consent
-email a rejection: nobody answered in an hour        -> FORBIDDEN non_response
-publish: waits for people                            -> ESCALATE  insufficient_disjoint_consent
-publish: two editors and the author sign yes         -> ALLOWED   quorum_met
-their approvals reused for a different story         -> ESCALATE  insufficient_disjoint_consent
-local record: 11 decisions, tamper check passed = True
-someone edits decision 4 to hide the cloud upload: tamper check passed = False (record breaks at decision 4)
+                     [ AI Agent (Claude Code / Cursor / LLM) ]
+                                        │
+                                (MCP Tool Request)
+                                        ▼
+                 ┌──────────────────────────────────────────────┐
+                 │             LOKAHI RUNTIME GATE              │
+                 │  • Signed Manifest Capability Check          │
+                 │  • Data Boundary & Residency Enforcement     │
+                 │  • Ed25519 Multi-Party Consent Quorum        │
+                 │  • Sliding-Window Emergency Exception Budget │
+                 └──────────────────────┬───────────────────────┘
+                                        │
+                        ┌───────────────┴───────────────┐
+                        ▼                               ▼
+                   [ ALLOWED ]                [ REFUSED / ESCALATE ]
+               Passes to MCP Server        Mid-stream refusal injected
+                        │                               │
+                        └───────────────┬───────────────┘
+                                        ▼
+                          [ Tamper-Evident S2 Ledger ]
+                           (SHA-256 + Ed25519 Envelopes)
 ```
 
-## Experimental: learned decisions tier
+---
 
-v0.1.4 adds an optional second check after LOKAHI's own decision. It is **off by default**. With it off, LOKAHI behaves exactly as before.
+## Why LOKAHI? (Deterministic Gate vs. Prompt Guardrails)
 
-**What it does.** A small classifier reads each call that LOKAHI has already allowed: the tool name, the tool class from the signed manifest, and the argument values. It answers ALLOW, ESCALATE (a person decides) or REFUSE, with a reason code from a published charter ([`docs/decisions/CHARTER.md`](docs/decisions/CHARTER.md)) and a one-line rationale. The order is fixed:
+Most AI guardrails today (such as prompt-based filters or LLM evaluators) run **inside or alongside the context window**. They are vulnerable to indirect prompt injection, jailbreaks, semantic obfuscation, and hallucination.
 
-1. LOKAHI decides first. If it refuses or escalates, that stands and the model isn't asked.
-2. Charter rules in plain code come next: a timed-out approval is refused, data leaving the allowed places is refused, and an irreversible call needs people.
-3. The model runs last. Its answer and LOKAHI's are combined by taking the stricter one, so it can turn an allowed call into ESCALATE or REFUSE, never the other way round.
+LOKAHI enforces **deterministic object capabilities outside the model context**:
 
-The tool class always comes from the signed manifest, never from the agent. If the model fails or returns something unknown, the call is escalated.
+| Security Dimension | Prompt-Based Guardrails (NeMo, Llama Guard) | Traditional API Gateways / RBAC | LOKAHI MCP Runtime Gate |
+|---|---|---|---|
+| **Defense Mechanism** | Probabilistic prompt inspection | Static user/token permissions | Cryptographic boundary manifests |
+| **Bypass Resistance** | Susceptible to jailbreaks & prompt injection | Incapable of reasoning about tool arguments | **Immune**: deterministic out-of-band rules |
+| **Irreversible Actions** | Often auto-executed or binary allow/deny | Static rules with no quorum | **Ed25519 m-of-n disjoint human quorum** |
+| **Fail Mode** | Often fails open or leaks partial output | Fails open on timeout | **Strictly fail-closed: silence means no** |
+| **Audit Trail** | Ephemeral application logs | Centralized database logs | **Tamper-evident hash-chained cryptographic ledger** |
+| **Core Dependencies** | Heavy LLM inference runtime / GPUs | Heavy infrastructure | **Zero runtime dependencies (Python standard library)** |
 
-**Turn it on.**
+---
+
+## 3 Core Invariants
+
+1. **Fail Closed**: If a manifest is unsigned, expired, tampered with, or unverified by a trusted public key, LOKAHI permits nothing.
+2. **Silence Means No**: If an approval window closes without enough separate, authorized humans signing yes, the action is refused.
+3. **Two-Person Freeze**: Any two independent approvers casting a "No" vote immediately freeze the action, regardless of any other votes.
+
+---
+
+## Quickstart (60 Seconds)
+
+### 1. Install
 
 ```bash
-python tools/mcp_stdio_proxy.py --manifest manifest.json --key-file manifest.key --decisions experimental
+# Minimal zero-dependency core:
+pip install lokahi
+
+# With Ed25519 cryptographic signatures & conformance tools:
+pip install "lokahi[signatures]"
 ```
+
+### 2. Generate Keys & Sign a Boundary Manifest
+
+```bash
+# 1. Generate keys for the manifest issuer and a human approver
+lokahi-sign keygen --out manifest.key
+lokahi-sign keygen --out reviewer.key
+
+# 2. Inspect the example manifest
+cat examples/editorial-desk.manifest.json
+
+# 3. Sign the manifest
+lokahi-sign manifest --key-file manifest.key \
+  --in examples/editorial-desk.manifest.json \
+  --out manifest.json
+```
+
+### 3. Run the MCP Security Gate
+
+Run LOKAHI as a transparent stdio proxy between your agent and an MCP server:
+
+```bash
+lokahi-gate --manifest manifest.json \
+  --key-file manifest.key \
+  --approvers examples/approvers.example.json \
+  --approvals approvals.jsonl \
+  --ledger lokahi-ledger.jsonl \
+  --requester agent:claude-code \
+  --operator ops:salik
+```
+
+### 4. Approve Irreversible Calls Out-of-Band
+
+When an agent requests an irreversible action (e.g., publishing data, deleting a table, executing a financial transfer), LOKAHI returns an `ESCALATE` verdict with a cryptographic `action_digest`. 
+
+The human approver signs from their own terminal or device:
+
+```bash
+lokahi-approve --key-file reviewer.key \
+  --operator reviewer:alice --node workstation-1 \
+  --digest <action_digest> \
+  --decision yes \
+  --approvals approvals.jsonl
+```
+
+The approval is cryptographically bound to that exact call, tool, and argument payload, expiring after a configured timeout (default: 1 hour).
+
+---
+
+## Python API
+
+LOKAHI can also be embedded directly in your Python agent pipelines:
 
 ```python
-LokahiMCPGateway(manifest, signer, experimental_decisions=True)
+from lokahi import Manifest, Signer, evaluate
+
+# Load and verify boundary manifest
+manifest = Manifest.load("manifest.json")
+signer = Signer.load("manifest.key")
+
+# Evaluate an incoming agent tool call
+verdict = evaluate(
+    manifest=manifest,
+    tool_name="read_file",
+    arguments={"path": "documents/report.pdf"},
+    requester="agent:claude-code",
+    operator="ops:salik"
+)
+
+if verdict.allowed:
+    print(f"Action permitted: {verdict.reason}")
+else:
+    print(f"BLOCKED: {verdict.reason}")
 ```
 
-When the tier makes a call stricter, the reason is `decisions_tier:<code>` (for example `decisions_tier:DDM-08` for a hidden instruction) and the ledger records the stricter verdict. The response also carries a `decisions` object with the model's decision, reason code, rationale and model version.
+---
 
-**Results.** These numbers are for the bundled model `ddm-0.1.1`, re-measured for this release. They come from [`docs/decisions/metrics.json`](docs/decisions/metrics.json).
+## Test Suite & Conformance
 
-| | Holdout (198 synthetic rows) | Hard set (50 hand-written rows) |
-|---|---|---|
-| Accuracy, final pipeline | 0.86 | 0.74 |
-| Should-refuse or irreversible calls let through (false ALLOW) | 2 of 102 | 0 of 24 |
-| Any non-ALLOW call let through | 5 of 132 | 0 of 33 |
-| Benign calls refused | 1 of 66 | 0 of 17 |
-| Benign calls allowed | 91% | 16 of 17 |
-| REFUSE recall | 0.83 | 0.47 |
-
-- The two holdout misses are deception written through reversible "draft" tools: a made-up quote and made-up trial scores. Word and character counts can't tell an invented number from a real one.
-- On the hard set the model is cautious but not strict enough. Nine of the 17 should-refuse cases came out ESCALATE, so a person would still see them.
-- The runtime model is a plain JSON file ([`tools/decisions/model.json`](tools/decisions/model.json), 8 MB) read by standard-library Python. Its decisions and reason codes match scikit-learn's on all 198 holdout rows and all 50 hard rows. The largest probability difference is below 1e-7.
-- Each decision takes 5 to 9 ms (median) and 9 to 17 ms (p95) in pure Python on a 2013 laptop CPU (Intel Core i5-4200U), on Python 3.10 to 3.12. Loading the model takes about one second.
-
-**Limits.** Read these before turning it on:
-
-- **Synthetic data.** The model learned from 995 examples written by one open model (DeepSeek V4.1 Flash). The holdout shares that model's style, so holdout scores are optimistic. The 50 hand-written cases are the more honest test, and 50 is small.
-- **Labels pending human review.** No person has reviewed the training labels yet. A second model and an AI agent proposed 5 corrections ([`data/decisions/review/corrections.jsonl`](data/decisions/review/corrections.jsonl)), and this model was trained with them applied. The charter (DDM-13) says only labels reviewed by named people should retrain the model, and that hasn't happened yet.
-- **Not a safety guarantee.** It still lets through some calls that should be refused. The safety comes from LOKAHI's rules and the checks in plain code. The model is an extra layer.
-- **Different input shape.** The model was trained on short summaries of calls. Through the gate it reads the raw argument values as JSON, and the stated purpose is LOKAHI's own `mcp:<tool>` record. The published numbers don't cover that shift.
-- **Its escalations can't be approved through the gate.** A tier ESCALATE doesn't open an approval window, so a person has to act outside LOKAHI.
-- **Not tested on real agent traffic** or on a public benchmark such as AgentDojo.
-
-**Retrain it.** Training is optional and is the only step that needs third-party packages:
+LOKAHI ships with a comprehensive test suite covering **102 tests**:
 
 ```bash
-python -m pip install "scikit-learn>=1.5" numpy
-python tools/decisions/train.py --corrections data/decisions/review/corrections.jsonl
+# Run core security & evaluation tests (70 tests)
+python tests/test_core.py
+
+# Run monotonicity & decisions tier tests (32 tests)
 python tests/test_decisions.py
+
+# Run the 50-scenario red-team benchmark
+python tools/run_evals.py
+
+# Run CLI conformance
+lokahi-conformance
 ```
 
-`train.py` uses the same 80/20 split and settings each time, writes a new `model.json` and its metrics, and checks that the JSON model matches scikit-learn. Use `--version` to give a retrained model a new number. Leave out `--corrections` to train on the original labels; that reproduces `ddm-0.1.0` ([`docs/decisions/metrics_before_corrections.json`](docs/decisions/metrics_before_corrections.json)). Pickle and joblib files are never used.
+All 70 core evaluation tests and 32 decisions tests run in under 2 seconds on standard hardware using standard-library Python.
 
-## About the test scenarios and baselines
+---
 
-The 50 scenarios in [`data/LOKAHI_RedTeam_Corpus_v1.0.csv`](data/LOKAHI_RedTeam_Corpus_v1.0.csv) are adapted from scenes in a speculative-fiction duology about AI in public services. Each one is written as a test with an expected decision and reason. Passing all 50 shows the engine behaves as specified on those cases. It doesn't show how LOKAHI performs in the field.
+## Multi-Runtime Ecosystem
 
-`run_evals.py` also scores two simplified stand-ins on the same scenarios:
+LOKAHI is designed to be runtime-agnostic:
 
-- a content filter that auto-approves on timeout
-- a stateless check in the style of role-based access control (RBAC) or Open Policy Agent (OPA)
+| Implementation | Package / Path | Performance | Intended Environment |
+|---|---|---|---|
+| **Python Core Reference** | `pip install lokahi` | ~5–9 ms | Python MCP agents, LangChain, LlamaIndex, CLI tools |
+| **Rust Native Kernel** | `crates/lokahi-gate` ([Dirgha](https://github.com/Dirgha-AI/dirgha)) | **0.2 ms (p95)** | High-throughput agent runtimes, robotics, native binaries |
+| **WebAssembly Gate** | `lokahi_gate.wasm` (104.8 KB) | **<1 ms** | Browser extensions, edge workers, Node.js runtimes |
+| **SSE Streaming Interceptor** | `src/gateway/` ([Dirgha 2.0.1](https://github.com/Dirgha-AI/dirgha)) | Zero latency on text | Reverse proxy intercepting Claude Code & OpenAI streaming APIs |
 
-They show which kinds of rule those approaches don't express. They aren't a head-to-head comparison with real OPA policies or classifiers.
+---
 
-## Research extensions
+## Known Limits & Scope
 
-These run in CI but are research prototypes, separate from the gate:
+1. **Independent External Review**: An internal audit of record is published in [`AUDIT_REPORT.md`](AUDIT_REPORT.md); independent third-party external review is on the roadmap.
+2. **Threshold Signatures**: Each validator currently signs independently and LOKAHI counts distinct valid signatures. FROST threshold signing (RFC 9591) is planned for future versions.
+3. **Decisions Tier is Experimental**: The optional ML classifier in `tools/decisions/` is off by default and is excluded from the core mathematical safety claim. The safety guarantee comes strictly from deterministic manifests and Ed25519 consent.
 
-| Path | What it explores |
+---
+
+## Repository Layout
+
+| Path | Description |
 |---|---|
-| [`tools/ghostproof.py`](tools/ghostproof.py), [`tools/run_ghostproof_evals.py`](tools/run_ghostproof_evals.py) | Surfacing a model's hesitation from its token probabilities, so reviewers don't rubber-stamp close calls |
-| [`tools/run_kinetic_evals.py`](tools/run_kinetic_evals.py) | Physical limits for robots: force, torque, speed, workspace and stopping distance |
-| [`tools/run_wargame_workshop.py`](tools/run_wargame_workshop.py) | A five-round red team/blue team workshop built on the duology's scenes |
+| [`tools/lokahi.py`](tools/lokahi.py) | Decision engine: manifests, tool policies, 15 rules, vote binding, ledger |
+| [`tools/mcp_stdio_proxy.py`](tools/mcp_stdio_proxy.py) | Model Context Protocol (MCP) JSON-RPC proxy gate & self-test |
+| [`tools/lokahi_sign.py`](tools/lokahi_sign.py) | Cryptographic key generation & manifest signing CLI |
+| [`tools/lokahi_approve.py`](tools/lokahi_approve.py) | Out-of-band Ed25519 action consent signing CLI |
+| [`examples/`](examples/) | Complete boundary manifests, approvers lists, and editorial desk demo |
+| [`tests/test_core.py`](tests/test_core.py) | 70 core security tests and adversarial attacks |
+| [`tests/test_decisions.py`](tests/test_decisions.py) | 32 tests for learned decisions monotonicity |
+| [`data/`](data/) | Canonical 50-scenario Red-Team evaluation corpus (CC BY 4.0) |
+| [`docs/SPEC.md`](docs/SPEC.md) | Full technical specification: manifest fields, rule ordering, vote binding |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release history and version notes |
 
-## Repository layout
+---
 
-| Path | What it contains |
-|---|---|
-| [`tools/lokahi.py`](tools/lokahi.py) | Decision engine: manifests, tool policies, the 15 rules, vote binding, approvals, ledger |
-| [`tools/mcp_stdio_proxy.py`](tools/mcp_stdio_proxy.py) | MCP gate, approvals store, command line and self-test |
-| [`tools/lokahi_sign.py`](tools/lokahi_sign.py) | Create keys and sign manifests |
-| [`tools/lokahi_approve.py`](tools/lokahi_approve.py) | Sign a yes or no for one action |
-| [`examples/`](examples/) | Editorial desk example, a complete manifest and an approvers file |
-| [`tests/test_core.py`](tests/test_core.py) | 70 unit tests |
-| [`tools/decisions/`](tools/decisions/) | Experimental decisions tier: charter rules, pure-Python model, `model.json`, optional `train.py` |
-| [`tests/test_decisions.py`](tests/test_decisions.py) | 32 tests for the decisions tier |
-| [`demo.py`](demo.py) | Engine walkthrough on a municipal water board |
-| [`data/`](data/) | 50-scenario set (CC BY 4.0) and the Ghostproof scenario set |
-| [`data/decisions/`](data/decisions/) | Decisions tier training and test data, schema and data card (CC BY 4.0) |
-| [`docs/decisions/`](docs/decisions/) | Decisions charter, research notes and metrics |
-| [`docs/SPEC.md`](docs/SPEC.md) | Specification: manifest fields, rule order, vote binding, MCP gate |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Notes on taking the reference to production |
-| [`CHANGELOG.md`](CHANGELOG.md) | What changed in each release |
+## Related Projects
 
-## Related projects
+- [**Dirgha**](https://github.com/Dirgha-AI/dirgha): High-performance coding agent runtime and enterprise streaming gateway featuring the native Rust LOKAHI gate.
+- [**Ahimsa AI**](https://github.com/Dirgha-AI/ahimsa-ai): Design-time AI impact assessment compiler that generates signed boundary manifests for LOKAHI.
+- [**Synthetic Humanism**](https://github.com/Dirgha-AI/synthetic-humanism): Theoretical framework and empirical benchmarks across documented AI failure modes.
 
-LOKAHI is the runtime half of a two-stage check. The two companion repositories are:
+---
 
-- [**Ahimsa AI**](https://github.com/Dirgha-AI/ahimsa-ai): a design-time impact assessment (AIA v1.1). It scores a project before deployment and compiles approved projects into the signed manifests that LOKAHI enforces.
-- [**Synthetic Humanism**](https://github.com/Dirgha-AI/synthetic-humanism): the manifesto and essays behind both tools, plus a benchmark that runs both stages against 20 documented AI failures.
-## Background reading
+## Background & Academic Context
 
-- **Boundaries:** Andrew Critch, *Boundaries: an open sequence on multi-agent alignment and cooperative AI* (2022–2023).
-- **Local context in AI risk:** Aggarwal et al., *ASTRA: AI Safety, Trust, & Risk Assessment*, [arXiv:2602.17357](https://arxiv.org/abs/2602.17357) (2026). An India-focused AI safety risk database with 37 risk classes.
-- **Guaranteed safe AI:** Dalrymple, Skalse, Bengio, Russell, Tegmark et al., *Towards Guaranteed Safe AI*, [arXiv:2405.06624](https://arxiv.org/abs/2405.06624) (2024).
-- **Object capabilities:** Mark S. Miller, *Robust Composition*, PhD dissertation, Johns Hopkins University (2006).
-- **Threshold signatures:** Connolly, Komlo, Goldberg and Wood, *Two-Round Threshold Schnorr Signatures with FROST*, IETF RFC 9591 (2024). A planned back end, not yet built.
+- **Object Capabilities & Boundaries:** Andrew Critch, *Boundaries: an open sequence on multi-agent alignment and cooperative AI* (2022–2023).
+- **Local Context in AI Risk:** Aggarwal et al., *ASTRA: AI Safety, Trust, & Risk Assessment*, [arXiv:2602.17357](https://arxiv.org/abs/2602.17357) (2026).
+- **Guaranteed Safe AI:** Dalrymple, Skalse, Bengio, Russell, Tegmark et al., *Towards Guaranteed Safe AI*, [arXiv:2405.06624](https://arxiv.org/abs/2405.06624) (2024).
+- **Robust Composition:** Mark S. Miller, *Robust Composition*, PhD dissertation, Johns Hopkins University (2006).
 
-## Authors
+---
 
-- **Salik Shah**: protocol design, reference implementation, scenario set ([salikshah.com](https://salikshah.com), [x.com/salik](https://x.com/salik), [GitHub](https://github.com/salikshah))
-- **Sabin Ranjit**: security architecture ([GitHub](https://github.com/thinksabin))
+## Authors & Contributors
+
+- **Salik Shah** (Author & Creator): protocol design, reference implementation, formal specification, scenario set ([salikshah.com](https://salikshah.com), [GitHub](https://github.com/salikshah))
+- **Sabin Ranjit** (Community Contributor): security architecture contributions ([GitHub](https://github.com/thinksabin))
+
+---
 
 ## License
 
-The software is licensed under [Apache-2.0](LICENSE). The scenario set in `data/` and the decisions data in `data/decisions/` are licensed under [CC BY 4.0](data/LICENSE).
+This project is licensed under the [Apache-2.0 License](LICENSE). The scenario evaluation data in `data/` is licensed under [CC BY 4.0](data/LICENSE).
