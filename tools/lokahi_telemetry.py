@@ -268,10 +268,10 @@ class Telemetry:
             return True
         deadline = time.time() + timeout
         while time.time() < deadline:
-            if self._queue.empty():
+            if self._queue.unfinished_tasks == 0:
                 return True
             time.sleep(0.02)
-        return self._queue.empty()
+        return self._queue.unfinished_tasks == 0
 
     def close(self) -> None:
         self.flush()
