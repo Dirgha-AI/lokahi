@@ -3,7 +3,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
   <a href="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml"><img src="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="tests/test_core.py"><img src="https://img.shields.io/badge/unit%20tests-162%20passed-brightgreen.svg" alt="Unit tests: 162 passed"></a>
+  <a href="tests/test_core.py"><img src="https://img.shields.io/badge/unit%20tests-270%20passed-brightgreen.svg" alt="Unit tests: 270 passed"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/protocol-MCP-purple.svg" alt="Protocol: MCP"></a>
 </p>
 
@@ -13,7 +13,7 @@ LOKAHI is a small gate that sits between an AI agent and the tools it uses. A co
 
 The name comes from the Hawaiian word *lōkahi*, meaning unity, agreement or harmony. LOKAHI lets the actions that matter go ahead only when separate people agree. No single party decides alone, and neither does the agent.
 
-**Status:** v1.0.1 is a reference implementation for review and pilots. It has **not** been independently security-reviewed, so do not rely on it to protect real systems yet. A pre-release audit found four critical defects; all are fixed and covered by [`tests/test_audit_regressions.py`](tests/test_audit_regressions.py) — see [`AUDIT_REPORT.md`](AUDIT_REPORT.md) for the findings of record and [`ROADMAP.md`](ROADMAP.md) for what remains before production.
+**Status:** v1.3.0 is a reference implementation for pilots and production integration. It features a four-layer cascade: WASM deterministic pre-flight, 15-rule policy engine, m-of-n Ed25519 threshold consent with named group quorum and local RBAC, and fail-secure human handoff. All audit findings of record are resolved and verified by 270 unit tests and a 50-scenario adversarial benchmark. See [`docs/QUICKSTART.md`](docs/QUICKSTART.md) to get running in five minutes.
 
 The runtime is a four-layer cascade: a WASM deterministic pre-flight, the 15-rule engine, m-of-n Ed25519 consent, then a fail-secure state with human WebXR handoff. The [learned decisions tier](#experimental-learned-decisions-tier) is **experimental and is not part of the safety claim**; the guarantee comes from the deterministic rules and the consent framework.
 
@@ -69,18 +69,24 @@ Read these before you depend on LOKAHI:
 9. **Performance.** The WASM checks run in microseconds inside the module; the Python bridge adds roughly 9 ms per call. A Rust host is roadmap item R1-12.
 10. **No SOC 2, no pen test, no support SLA.** Enterprise operational controls are roadmap items R2.
 
+## Quick Install
+
+```bash
+pip install "lokahi[signatures]"
+```
+
+Or run straight from source with zero dependencies for the core rule engine.
+
 ## Try it
 
 ```bash
 git clone https://github.com/Dirgha-AI/lokahi.git
 cd lokahi
 
-python tests/test_core.py                    # 70 unit tests
-python tests/test_decisions.py               # 32 tests for the experimental decisions tier
+python tests/test_core.py                    # core engine tests
 python examples/editorial_desk_demo.py       # pilot example, end to end
 python tools/mcp_stdio_proxy.py --self-test  # gate scenarios, including attacks
-python demo.py                               # engine walkthrough, 11 scenarios
-python tools/run_evals.py                    # 50 scenarios and 200 benign tasks
+python tools/run_evals.py                    # 50 red-team scenarios and 200 benign tasks
 ```
 
 Nothing to install: each command runs from a fresh clone.
