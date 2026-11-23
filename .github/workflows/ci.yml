@@ -124,7 +124,7 @@ jobs:
 
     - name: Install the built wheel
       run: |
-        python -m pip install dist/*.whl
+        python -m pip install "dist/*.whl[signatures]"
         python -c "import tools.mcp_stdio_proxy as m; print('import OK')"
 
     - name: CLI end-to-end (Ed25519 + HMAC)
