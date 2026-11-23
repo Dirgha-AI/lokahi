@@ -49,16 +49,16 @@ Documentation = "https://github.com/Dirgha-AI/lokahi#readme"
 Changelog = "https://github.com/Dirgha-AI/lokahi/blob/main/CHANGELOG.md"
 
 [project.scripts]
-lokahi = "tools.mcp_stdio_proxy:main"
-lokahi-gate = "tools.mcp_stdio_proxy:main"
-lokahi-gateway = "tools.mcp_stdio_proxy:main"
-lokahi-sign = "tools.lokahi_sign:main"
-lokahi-approve = "tools.lokahi_approve:main"
-lokahi-conformance = "tools.conformance:main"
+lokahi = "lokahi.mcp_stdio_proxy:main"
+lokahi-gate = "lokahi.mcp_stdio_proxy:main"
+lokahi-gateway = "lokahi.mcp_stdio_proxy:main"
+lokahi-sign = "lokahi.lokahi_sign:main"
+lokahi-approve = "lokahi.lokahi_approve:main"
+lokahi-conformance = "lokahi.conformance:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["tools*"]
+[tool.setuptools]
+package-dir = {"lokahi" = "tools"}
+packages = ["lokahi", "lokahi.decisions"]
 
 [tool.setuptools.package-data]
-"tools.decisions" = ["model.json"]
+"lokahi.decisions" = ["model.json"]
