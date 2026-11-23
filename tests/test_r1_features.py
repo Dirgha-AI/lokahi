@@ -5,6 +5,7 @@ Run: python3 tests/test_r1_features.py
 """
 import copy
 import json
+import importlib.util
 import os
 import sys
 import unittest
@@ -501,7 +502,7 @@ def _make_jwt(claims, *, key, alg="RS256", kid="kid-1"):
     return signing_input.decode() + "." + _b64(signature)
 
 
-@unittest.skipUnless(__import__("importlib").util.find_spec("cryptography"), "cryptography not installed")
+@unittest.skipUnless(importlib.util.find_spec("cryptography"), "cryptography not installed")
 class TestOAuthVerifier(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -602,7 +603,7 @@ class TestOAuthVerifier(unittest.TestCase):
             v.verify_token(tampered)
 
 
-@unittest.skipUnless(__import__("importlib").util.find_spec("cryptography"), "cryptography not installed")
+@unittest.skipUnless(importlib.util.find_spec("cryptography"), "cryptography not installed")
 class TestOAuthOverHttp(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

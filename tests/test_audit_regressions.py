@@ -6,6 +6,7 @@ See AUDIT_REPORT.md (C1-C3) and AUDIT_TASKS.md.
 
 Run: python3 tests/test_audit_regressions.py
 """
+import importlib.util
 import json
 import os
 import subprocess
@@ -365,6 +366,10 @@ class TestC3CLIFlows(unittest.TestCase):
             stdin=request,
         )
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("cryptography") is not None,
+        "cryptography package not installed",
+    )
     def test_ed25519_cli_end_to_end(self):
         with tempfile.TemporaryDirectory() as d:
             key_file = os.path.join(d, "manifest.key")
