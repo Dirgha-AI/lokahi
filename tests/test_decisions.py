@@ -455,7 +455,17 @@ class TestOffByDefault(unittest.TestCase):
 
             default, off, on = run([]), run(["--decisions", "off"]), run(["--decisions", "experimental"])
         self.assertTrue(default["allowed"])
-        self.assertEqual(default, off)
+
+        # Receipts carry a second-resolution `ts`, so two CLI runs that straddle
+        # a second boundary differ only in that field; drop it before comparing.
+        def without_ts(value):
+            if isinstance(value, dict):
+                return {k: without_ts(v) for k, v in value.items() if k != "ts"}
+            if isinstance(value, list):
+                return [without_ts(v) for v in value]
+            return value
+
+        self.assertEqual(without_ts(default), without_ts(off))
         self.assertNotIn("decisions", default["lokahi_receipt"])
         self.assertFalse(on["allowed"])
         self.assertTrue(on["error"]["data"]["reasons"][0].startswith("decisions_tier:"))

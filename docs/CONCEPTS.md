@@ -188,6 +188,6 @@ a human hand when the machine cannot be sure.
 | **Primary Domain** | Network ingress, rate-limiting, CORS | Single human-in-the-loop click | **Autonomous agent consequential tool actions** |
 | **Approval Protocol** | None (traffic pass-through) | Single operator timeout-reject | **Disjoint $m$-of-$n$ human quorum** with requester conflict exclusion |
 | **Failure Mode** | Fail-open / fallback error | Timeout error | **Fail-closed ("Silence = Refusal")** |
-| **Audit Ledger** | Application database log (mutable) | Audit API log | **Tamper-evident BLAKE3 hash-chained, Ed25519-signed ledger** |
+| **Audit Ledger** | Application database log (mutable) | Audit API log | **Tamper-evident SHA-256 hash-chained, Ed25519-signed ledger** |
 | **Physical Safety** | None | None | **Physical safety envelopes & safe mechanical holds (stopping barriers)** |
 | **Deployment Posture** | Cloud-native / SaaS | Cloud Control Plane | **Air-gapped Public Digital Infrastructure (DPI) & zero-cloud local** |

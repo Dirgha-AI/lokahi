@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""LOKAHI v0.1.4 reference core (with Kinetic Ahimsa physical-envelope interlocks
+"""LOKAHI v1.3.0 reference core (with Kinetic Ahimsa physical-envelope interlocks
 and stateful Ledger sliding-window exception tracking).
 
 Three pieces, in the order a request moves through them:
@@ -41,7 +41,7 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import Iterable
 
-__version__ = "1.1.0"
+__version__ = "1.3.0"
 
 COMPLIANT = "compliant"
 ESCALATE = "escalate"

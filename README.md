@@ -23,7 +23,7 @@
 
 ---
 
-**Status:** v1.3.0 is a reference implementation for pilots and production integration. It features a four-layer cascade: WASM deterministic pre-flight, 15-rule policy engine, m-of-n Ed25519 threshold consent with named group quorum and local RBAC, and fail-secure human handoff. All audit findings of record are resolved and verified by 270 unit tests and a 50-scenario adversarial benchmark. See [`docs/QUICKSTART.md`](docs/QUICKSTART.md) to get running in five minutes.
+**Status:** v1.3.0 is a reference implementation for pilots and production integration. It features a four-layer cascade: WASM deterministic pre-flight, 15-rule policy engine, m-of-n Ed25519 threshold consent with named group quorum and local RBAC, and fail-secure human handoff. Audit findings of record are tracked in [`AUDIT_FINDINGS_2026-11-23.md`](AUDIT_FINDINGS_2026-11-23.md) and backed by the unit suite and a 50-scenario adversarial benchmark. See [`docs/QUICKSTART.md`](docs/QUICKSTART.md) to get running in five minutes.
 
 The runtime is a four-layer cascade: a WASM deterministic pre-flight, the 15-rule engine, m-of-n Ed25519 consent, then a fail-secure state with human WebXR handoff. The [learned decisions tier](#experimental-learned-decisions-tier) is **experimental and is not part of the safety claim**; the guarantee comes from the deterministic rules and the consent framework.
 

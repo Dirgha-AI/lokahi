@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased (2026-11-23): audit remediation
+
+Findings of record for this round are in
+[`AUDIT_FINDINGS_2026-11-23.md`](AUDIT_FINDINGS_2026-11-23.md).
+
+### History
+
+- Internal strategy material (`STRATEGY.md`, `DEVELOPMENT_DIRECTION.md`) was
+  removed from the published history of `main`, `release/v1.3.0` and tags
+  `v1.3.0` / `v1.3.0-rc1`. File trees are unchanged; only commit SHAs moved.
+  Consequence: the `v1.3.0` tag no longer matches the commit SHA recorded in
+  the PyPI 1.3.0 provenance attestation.
+
+### Fixed
+
+- `docs/CONCEPTS.md` described the ledger as BLAKE3 hash-chained. The
+  implementation has always used SHA-256 (`Ledger.append`, `verify`).
+- `tools/lokahi.py` reported `__version__ = "1.1.0"` and a v0.1.4 module
+  docstring while the package released as 1.3.0.
+- `tests/test_decisions.py::test_cli_default_is_off_and_flag_turns_it_on`
+  compared two full receipts including their `ts` seconds, so it failed
+  whenever the two CLI runs landed in different seconds.
+- Dangling `STRATEGY.md` references in `AUDIT_TASKS.md` and this file.
+
 ## v1.1.0 (2026-11-20): parity release
 
 ### Parity work in this release
@@ -90,8 +114,8 @@
 - **`ROADMAP.md`** — phased plan to open-source SOTA: competitive parity matrix
   across 12 vendors, 10 workstreams, releases R0–R4 with acceptance criteria,
   published benchmark targets, resourcing and exit gates.
-- **`STRATEGY.md`** — full audit, use cases, ICP, enterprise and investor
-  perspectives, gaps, competitive analysis, falsification tests.
+- **`STRATEGY.md`** — internal strategy notes; removed from this repository
+  (see `AUDIT_FINDINGS_2026-11-23.md`).
 - **`AUDIT_REPORT.md`**, **`AUDIT_TASKS.md`** — pre-release audit of record and
   its remediation tracking.
 - **`TASKS.md`** — rewritten as the living task board aligned to the roadmap.
