@@ -267,8 +267,6 @@ class Telemetry:
         if not self.sinks:
             return True
         deadline = time.time() + timeout
-        # unfinished_tasks also counts an event the worker has taken off the
-        # queue but not finished sending, so flush waits for in-flight sends.
         while time.time() < deadline:
             if self._queue.unfinished_tasks == 0:
                 return True

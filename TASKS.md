@@ -19,7 +19,7 @@ Rule: every task lands with an acceptance test that fails before it.
 
 ---
 
-## R1 - Interoperability (v1.1) — 12 weeks
+## R1 — Parity (v1.1) — 12 weeks
 
 ### W1 Protocol & transport
 - [x] R1-01 Streamable HTTP transport (stateless, no sessions) + keep stdio (`tools/lokahi_http.py`)

@@ -1,7 +1,10 @@
 <h1 align="center">LOKAHI</h1>
 
 <p align="center">
-  <strong>Model Context Protocol (MCP) Runtime Security Gate & Deterministic Policy Firewall for AI Agents</strong>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
+  <a href="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml"><img src="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="tests/test_core.py"><img src="https://img.shields.io/badge/unit%20tests-270%20passed-brightgreen.svg" alt="Unit tests: 270 passed"></a>
+  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/protocol-MCP-purple.svg" alt="Protocol: MCP"></a>
 </p>
 
 <p align="center">
@@ -20,7 +23,9 @@
 
 ---
 
-## What is LOKAHI?
+**Status:** v1.3.0 is a reference implementation for pilots and production integration. It features a four-layer cascade: WASM deterministic pre-flight, 15-rule policy engine, m-of-n Ed25519 threshold consent with named group quorum and local RBAC, and fail-secure human handoff. All audit findings of record are resolved and verified by 270 unit tests and a 50-scenario adversarial benchmark. See [`docs/QUICKSTART.md`](docs/QUICKSTART.md) to get running in five minutes.
+
+The runtime is a four-layer cascade: a WASM deterministic pre-flight, the 15-rule engine, m-of-n Ed25519 consent, then a fail-secure state with human WebXR handoff. The [learned decisions tier](#experimental-learned-decisions-tier) is **experimental and is not part of the safety claim**; the guarantee comes from the deterministic rules and the consent framework.
 
 **LOKAHI** is a lightweight, fail-closed runtime security gate that sits between an autonomous AI agent (such as **Claude Code**, **Cursor**, **LangChain**, or custom agent harnesses) and the tools it invokes over the **Model Context Protocol (MCP)**.
 
@@ -85,7 +90,24 @@ LOKAHI enforces **deterministic object capabilities outside the model context**:
 
 ---
 
-## Quickstart (60 Seconds)
+1. **No independent security review.** The audit at [`AUDIT_REPORT.md`](AUDIT_REPORT.md) is internal. No external cryptographic or safety review has been completed.
+2. **Ed25519 is not threshold signing.** Each validator signs independently and the gate counts distinct valid signatures. There is no key splitting and no FROST group key; a compromised gate operator can see every signature.
+3. **It decides but does not relay.** LOKAHI returns a decision; your MCP client or wrapper sends allowed calls to the tool. It does not yet inspect tool responses (indirect prompt injection arrives there), and it does not pin tool descriptions, so a server can change a tool schema after approval.
+4. **stdio only.** There is no OAuth 2.1 / Streamable HTTP resource-server support yet, so it cannot front remote MCP servers on its own.
+5. **Approval windows reset on restart.** A restart opens a new window; it never approves anything, but in-progress windows are lost.
+6. **Distinct people are assumed, not proven.** Two different approver IDs are trusted to be two different people. Disjointness attestation is roadmap item R3.
+7. **The ledger is a local JSONL file** written by one process. It is hash-chained but not Merkle-proved, not witness-cosigned, and not remotely immutable.
+8. **The learned decisions tier is experimental.** It was trained on synthetic data, its labels have not been human-reviewed, and it has never seen real agent traffic. It is excluded from the safety claim.
+9. **Performance.** The WASM checks run in microseconds inside the module; the Python bridge adds roughly 9 ms per call. A Rust host is roadmap item R1-12.
+10. **No SOC 2, no pen test, no support SLA.** Enterprise operational controls are roadmap items R2.
+
+## Quick Install
+
+```bash
+pip install "lokahi[signatures]"
+```
+
+Or run straight from source with zero dependencies for the core rule engine.
 
 ### 1. Install
 
@@ -93,8 +115,10 @@ LOKAHI enforces **deterministic object capabilities outside the model context**:
 # Minimal zero-dependency core:
 pip install lokahi
 
-# With Ed25519 cryptographic signatures & conformance tools:
-pip install "lokahi[signatures]"
+python tests/test_core.py                    # core engine tests
+python examples/editorial_desk_demo.py       # pilot example, end to end
+python tools/mcp_stdio_proxy.py --self-test  # gate scenarios, including attacks
+python tools/run_evals.py                    # 50 red-team scenarios and 200 benign tasks
 ```
 
 ### 2. Generate Keys & Sign a Boundary Manifest

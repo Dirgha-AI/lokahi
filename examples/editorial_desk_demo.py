@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Pilot example: a small publication's editorial desk, gated by LOKAHI v0.1.4.
+"""Pilot example: a small publication's editorial desk, gated by LOKAHI v1.3.0.
 
 The editors write one signed manifest saying what an AI agent may do with
 unpublished manuscripts. Every tool call then goes through the gateway:
@@ -94,7 +94,7 @@ def main() -> int:
             store.add(Approval(person, f"device-{i}", decision, digest, EXPIRES, f"{digest[:8]}-{person}").sign(people[person]))
 
     print("=" * 96)
-    print("LOKAHI v0.1.4 PILOT EXAMPLE: EDITORIAL DESK")
+    print("LOKAHI v1.3.0 PILOT EXAMPLE: EDITORIAL DESK")
     print("=" * 96)
     show("summarize a submission", gw.intercept(call("summarize_submission", submission_id="S-12", manuscript_text="..."), now=NOW))
     show("ask for the author's home address", gw.intercept(call("summarize_submission", submission_id="S-12", author_home_address=True), now=NOW))

@@ -1,4 +1,4 @@
-# LOKAHI roadmap
+# LOKAHI — Roadmap to Open-Source SOTA
 
 **Vision:** LOKAHI is the reference open-source enforcement runtime for authority
 over consequential agent actions: deterministic pre-flight, multi-party disjoint
@@ -6,16 +6,66 @@ consent, physical safety envelopes, tamper-evident evidence, and fail-secure
 human handoff — deployable air-gapped, integrable with any MCP host, and good
 enough that a CISO, a safety engineer, and an auditor all accept it.
 
-**What LOKAHI is for**:
+**Non-negotiable differentiators** (the reason to exist, not the reason to buy):
 1. Disjoint m-of-n consent with dissent freeze and conflict-of-interest exclusion.
 2. Kinetic Ahimsa physical envelopes with safe mechanical hold.
 3. Design-time assessment → runtime manifest compiler (+ ahimsa-ai).
 4. Fail-secure lock + human teleoperation handoff.
 5. Auditor-grade evidence pack, offline-verifiable.
 
+**Parity is table stakes.** Everything else in this roadmap exists so we can
+pass an enterprise RFP *and* keep the five differentiators.
+
 ---
 
-## 1. Workstreams
+## 1. Competitive parity matrix
+
+Legend: ✅ ships · ◐ partial · ❌ absent · ★ LOKAHI-unique
+
+| Capability | Permit | Docker AG | SecureAuth | TrueFoundry | EnforceAuth | ContextForge | Kong | agentgw | **LOKAHI target** |
+|---|---|---|---|---|---|---|---|---|---|
+| stdio MCP | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ now |
+| Streamable HTTP / stateless MCP 2026-07-28 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | **R1** |
+| OAuth 2.1 resource server (RFC 9728 PRM, PKCE, RFC 8707) | ✅ | ◐ | ✅ | ◐ | ✅ | ✅ | ✅ | ◐ | **R1** |
+| iss validation (RFC 9207), CIMD client registration | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ | ✅ | ◐ | **R1** |
+| No token passthrough / token exchange | ◐ | ◐ | ◐ | ◐ | ✅ | ◐ | ✅ | ◐ | **R1** |
+| Per-client consent (confused deputy) | ✅ | ✅ | ✅ | ✅ | ✅ | ◐ | ◐ | ◐ | **R1** |
+| Tool ACL per consumer / team | ✅ | ✅ | ◐ | ✅ | ✅ | ✅ | ✅ | ✅ | **R1** |
+| Registry / virtual servers | ◐ | ✅ | ❌ | ✅ | ❌ | ✅ | ◐ | ◐ | **R2** |
+| Tool-description pinning / rug-pull defence | ◐ | ✅ | ◐ | ◐ | ◐ | ✅ | ◐ | ◐ | **R1** |
+| Credential injection / vault (agent holds no upstream secret) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | **R1** |
+| Human-in-the-loop approval | ✅ | ✅ | ✅ | ✅ | ✅ | ◐ | ◐ | ◐ | ✅ now |
+| Argument-bound approval | ✅ | ◐ | ◐ | ✅ | ✅ | ◐ | ◐ | ◐ | ✅ now |
+| Timeout always rejects | ✅ | ✅ | ✅ | ✅ | ✅ | ◐ | ◐ | ◐ | ✅ now |
+| **Disjoint m-of-n quorum** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ★ now |
+| **Dissent freeze** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ★ now |
+| **Physical envelope + safe hold** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ★ now |
+| **Fail-secure lock + teleop handoff** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ★ now |
+| Policy-as-code interop (OPA / Cedar / CEL) | ◐ | ✅ Cedar | ◐ | ◐ | ✅ OPA | ✅ OPA | ◐ | ✅ CEL | **R1** |
+| OTel traces + metrics | ◐ | ✅ | ◐ | ✅ | ◐ | ✅ | ✅ | ✅ | **R1** |
+| SIEM export (Splunk/Sentinel/Elastic) | ◐ | ◐ | ◐ | ✅ | ◐ | ✅ | ✅ | ✅ | **R1** |
+| Approval inbox (email / Slack / passkey) | ✅ | ✅ | ✅ | ✅ | ◐ | ❌ | ❌ | ❌ | **R1** |
+| Admin console | ✅ | ✅ | ✅ | ✅ | ◐ | ✅ | ✅ | ◐ | **R1** |
+| Escalation / on-call routing | ◐ | ◐ | ◐ | ◐ | ◐ | ❌ | ❌ | ❌ | **R2** |
+| Immutable transparency log + witness | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | **R2** |
+| Multi-tenancy + HA | ✅ | ◐ | ✅ | ✅ | ◐ | ✅ | ✅ | ✅ | **R2** |
+| Policy simulation / replay over history | ❌ | ❌ | ❌ | ❌ | ◐ | ❌ | ❌ | ❌ | **R2** |
+| SDKs (Python / TypeScript / Go) | ◐ | ◐ | ✅ | ✅ | ◐ | ✅ | ✅ | ◐ | **R2** |
+| Air-gapped deployment | ◐ | ◐ | ◐ | ❌ | ◐ | ✅ | ❌ | ◐ | ✅ now |
+| Fuzz + formal verification of kernel | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | **R1–R2** |
+| FROST threshold signatures | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | **R3** |
+| Disjointness attestation graph | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | **R3** |
+| MCP gateway conformance suite | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | **R1** ★ leadership |
+| Evidence pack for auditors | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ | **R1** ★ |
+| Physics/robotics integration (ROS 2, ISO 10218) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | **R3** ★ |
+
+**Reading:** we already lead on four safety capabilities nobody sells. We are
+behind on transport, identity, observability, operations and UX. Parity work is
+R1–R2; depth work is R3; category leadership is R4.
+
+---
+
+## 2. Workstreams
 
 | ID | Workstream | Owner type | Primary risk retired |
 |---|---|---|---|
@@ -32,7 +82,7 @@ enough that a CISO, a safety engineer, and an auditor all accept it.
 
 ---
 
-## 2. Phases
+## 3. Phases
 
 ### R0 — Stabilise (weeks 0–2) · v1.0.1
 Ship the audit remediation and stop the bleeding.
@@ -43,8 +93,8 @@ Exit criteria:
 - CI: Python matrix 3.10–3.12, Rust build+test, packaging smoke, CLI e2e
 - Release v1.0.1 tagged
 
-### R1 - Interoperability (weeks 3–14) · v1.1 "Enterprise-ready"
-The release that covers what security teams expect from any MCP gateway.
+### R1 — Parity (weeks 3–14) · v1.1 "Enterprise-ready"
+The release that makes us pass an RFP without apologising.
 
 **W1 Protocol & transport**
 - MCP Streamable HTTP transport (stateless, 2026-07-28), keep stdio
@@ -182,7 +232,7 @@ Become the thing other people implement.
 
 ---
 
-## 3. Task index (by phase)
+## 4. Task index (by phase)
 
 ### R1 tasks (detailed)
 
@@ -240,7 +290,7 @@ Become the thing other people implement.
 
 ---
 
-## 4. Benchmarks we will publish (and be judged on)
+## 5. Benchmarks we will publish (and be judged on)
 
 | Metric | Target (R1) | Target (R3) |
 |---|---|---|
@@ -258,7 +308,7 @@ No benchmark without a reproduction command.
 
 ---
 
-## 5. Definition of done per release
+## 6. Definition of done per release
 
 A release ships only when all hold:
 
@@ -273,7 +323,7 @@ A release ships only when all hold:
 
 ---
 
-## 6. Resourcing and sequencing reality
+## 7. Resourcing and sequencing reality
 
 | Phase | Duration | Minimum team | Notes |
 |---|---|---|---|
@@ -288,22 +338,25 @@ where a company either hires or stalls.
 
 ---
 
-## 7. Risks to the roadmap
+## 8. Risks to the roadmap
 
 | Risk | Impact | Mitigation |
 |---|---|---|
 | MCP spec changes again | Rework in W1 | Transport-agnostic core; conformance suite tracks revisions |
+| A platform ships quorum + physical | Differentiators eroded | Accelerate W5 (robotics) and W10 (standards) — platforms will not certify ISO or publish a corpus |
 | No design partner by R1 exit | Roadmap becomes fiction | Run P0 design-partner hunt in parallel from week 1 |
 | Crypto review finds FROST or digest issue | R3 slips | Commission review #1 in R1, #2 before FROST GA |
 | Two-person bus factor | Existential | Document everything; bring a third engineer in R1 |
+| Scope creep into "AI governance SaaS" | Loses focus | Governance stays design-time (AIA); we sell enforcement + evidence |
 
 ---
 
-## 8. What "complete" means
+## 9. What "complete" means
 
-The vision is complete when:
+The vision is complete when, without a LOKAHI salesperson in the room:
 
 1. An auditor can verify any decision offline from an evidence pack.
 2. A utility can deploy air-gapped and show a regulator the quorum, the envelope, and the hold.
 3. A robotics integrator can cite LOKAHI in an ISO 10218 safety case.
 4. A platform vendor implements the conformance suite because their customer demanded it.
+5. A competitor's comparison page has to list "multi-party disjoint consent" and "physical envelope" as gaps.

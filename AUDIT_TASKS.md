@@ -109,3 +109,4 @@ No push without user confirmation.
 - [ ] Write the fuzz targets described in `docs/FUZZING_PLAN.md`
 - [ ] Replace independent Ed25519 signatures with FROST threshold signing
 - [ ] Disjointness attestation graph
+- [ ] Product/GTM priorities: see `STRATEGY.md` §9 (P0 = design partner, OIDC+OTel, approval channel, evidence pack, external crypto review)

@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-if __package__ != "lokahi" and HERE not in sys.path:  # source checkout only
+if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 from lokahi import (  # noqa: E402
