@@ -193,10 +193,14 @@ def test_keep_in_violation_is_caught_at_the_endpoint():
 
 
 def test_tool_radius_shrinks_keep_in_and_grows_keep_out():
-    config = gate(tool_radius_m=0.1)
-    assert config.config.tool_radius_m == 0.1
-    result = config.evaluate_step(T0, T0, state(0.95, 0.5, 0.5), chunk([0.95, 0.5, 0.5]))
-    assert result.verdict == "FORBIDDEN"
+    """A 0.1 m tool means the centre may only reach 0.9, not 1.0."""
+    g = gate(tool_radius_m=0.1)
+    assert g.config.tool_radius_m == 0.1
+    legal = g.evaluate_step(T0, T0, state(0.8, 0.5, 0.5), chunk([0.85, 0.5, 0.5]))
+    assert legal.verdict == "COMPLIANT", legal.violated_invariants
+    refused = g.evaluate_step(T0, T0, state(0.85, 0.5, 0.5), chunk([0.95, 0.5, 0.5]))
+    assert refused.verdict == "FORBIDDEN"
+    assert any("workspace_keep_in" in reason for reason in refused.violated_invariants)
 
 
 # ---------------------------------------------------------------------------
@@ -443,3 +447,56 @@ def test_manifest_signature_covers_physical_vla():
     tampered = Manifest.from_dict(dict(signed.to_dict()))
     tampered.physical_vla["max_action_age_ms"] = 100000.0
     assert not tampered.verify(Signer(key))
+
+
+# ---------------------------------------------------------------------------
+# recovery: a gate that traps the robot inside a violated region is worse
+# than no gate
+# ---------------------------------------------------------------------------
+
+def test_escape_from_a_keep_out_box_is_allowed():
+    """Already inside a hazard, moving out must not be refused."""
+    g = gate(keep_out_aabbs=[OBSTACLE])
+    result = g.evaluate_step(T0, T0, state(0.5, 0.5, 0.5), chunk([0.25, 0.5, 0.5]))
+    assert result.verdict == "COMPLIANT", result.violated_invariants
+    assert result.margins["keep_out_recovery_0_m"] > 0.0
+
+
+def test_moving_deeper_into_a_keep_out_box_is_refused():
+    """Going further in is not recovery. Depth rising means the arm is going the wrong way."""
+    g = gate(keep_out_aabbs=[OBSTACLE])
+    result = g.evaluate_step(T0, T0, state(0.42, 0.5, 0.5), chunk([0.5, 0.5, 0.5]))
+    assert result.verdict == "FORBIDDEN"
+    assert any("recovery_required:keep_out" in reason for reason in result.violated_invariants)
+
+
+def test_a_recovery_refusal_does_not_latch_so_the_next_step_can_fix_it():
+    """SOFT_STOP, not E_STOP: latching here would hold the arm inside the hazard."""
+    g = gate(keep_out_aabbs=[OBSTACLE])
+    refused = g.evaluate_step(T0, T0, state(0.42, 0.5, 0.5), chunk([0.5, 0.5, 0.5]))
+    assert refused.state == SOFT_STOP
+
+    escaped = g.evaluate_step(T0 + 20 * MS, T0 + 20 * MS, state(0.42, 0.5, 0.5), chunk([0.25, 0.5, 0.5]))
+    assert escaped.verdict == "COMPLIANT", escaped.violated_invariants
+
+
+def test_keep_in_recovery_towards_the_workspace_is_allowed():
+    g = gate()
+    result = g.evaluate_step(T0, T0, state(1.2, 0.5, 0.5), chunk([1.1, 0.5, 0.5]))
+    assert result.verdict == "COMPLIANT", result.violated_invariants
+
+
+def test_keep_in_recovery_away_from_the_workspace_is_refused():
+    g = gate()
+    result = g.evaluate_step(T0, T0, state(1.2, 0.5, 0.5), chunk([1.4, 0.5, 0.5]))
+    assert result.verdict == "FORBIDDEN"
+    assert any("recovery_required:keep_in" in reason for reason in result.violated_invariants)
+
+
+def test_a_clean_start_still_refuses_entering_a_keep_out_box():
+    """Recovery must not become a general licence to enter."""
+    g = gate(keep_out_aabbs=[OBSTACLE])
+    result = g.evaluate_step(T0, T0, state(0.2, 0.5, 0.5), chunk([0.5, 0.5, 0.5]))
+    assert result.verdict == "FORBIDDEN"
+    assert result.state == E_STOP
+    assert any("workspace_keep_out" in reason for reason in result.violated_invariants)

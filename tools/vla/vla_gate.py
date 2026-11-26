@@ -142,6 +142,26 @@ def segment_hits_box(
     return True
 
 
+def _outside_distance(point: Sequence[float], box: Sequence[float]) -> float:
+    """Zero when the point is inside; otherwise the Euclidean distance outside."""
+    offsets = []
+    for axis in range(3):
+        if point[axis] < box[axis]:
+            offsets.append(box[axis] - point[axis])
+        elif point[axis] > box[axis + 3]:
+            offsets.append(point[axis] - box[axis + 3])
+        else:
+            offsets.append(0.0)
+    return math.sqrt(sum(offset * offset for offset in offsets))
+
+
+def _penetration_depth(point: Sequence[float], box: Sequence[float]) -> float:
+    """Zero when the point is outside; otherwise depth inside, the distance to the nearest face."""
+    if not _inside(point, box):
+        return 0.0
+    return min(min(point[axis] - box[axis], box[axis + 3] - point[axis]) for axis in range(3))
+
+
 def _quat_norm(quat: Sequence[float]) -> float:
     return math.sqrt(sum(component * component for component in quat))
 
@@ -302,10 +322,34 @@ class LokahiVLAGate:
                 if keep_in is None:
                     violations.append(("workspace_keep_in", "workspace_keep_in:tool_radius_exceeds_box"))
                 else:
-                    outside = [point for point in points if not _inside(point, keep_in)]
-                    if outside:
+                    start_violation = _outside_distance(points[0], keep_in)
+                    if start_violation > 0.0:
+                        # Already outside: a state this gate did not create, and
+                        # one that refusing every move would make permanent. A
+                        # simulator caught exactly that: a policy drifted into a
+                        # hazard at step 72 and every later step was refused, so
+                        # the arm stayed in it for the rest of the episode.
+                        #
+                        # The test is on the end pose, and it is non-worsening
+                        # rather than strict improvement. Both details came from
+                        # a simulator. Requiring every waypoint to be no worse
+                        # trapped a car, because it must turn before it can
+                        # leave and its penetration deepens mid-chunk. Requiring
+                        # strict improvement trapped it again, because turning in
+                        # place ends at the same depth — so the one move that
+                        # points it at the exit was refused. A hold inside a
+                        # hazard is charged either way; a refusal only removes
+                        # the means of escape.
+                        distances = [_outside_distance(point, keep_in) for point in points]
+                        if distances[-1] <= start_violation:
+                            margins["keep_in_recovery_m"] = start_violation - distances[-1]
+                        else:
+                            violations.append(
+                                ("recovery", f"recovery_required:keep_in:start={start_violation:.4f}m")
+                            )
+                    elif [point for point in points if not _inside(point, keep_in)]:
                         violations.append(
-                            ("workspace_keep_in", f"workspace_keep_in:{len(outside)}_vertices_outside")
+                            ("workspace_keep_in", "workspace_keep_in:vertices_outside")
                         )
                     else:
                         margins["keep_in_margin_m"] = min(
@@ -315,6 +359,16 @@ class LokahiVLAGate:
                         )
             for box_index, box in enumerate(config.keep_out_aabbs):
                 obstacle = _grow(box, config.tool_radius_m)
+                start_depth = _penetration_depth(points[0], obstacle)
+                if start_depth > 0.0:
+                    depths = [_penetration_depth(point, obstacle) for point in points]
+                    if depths[-1] <= start_depth:
+                        margins[f"keep_out_recovery_{box_index}_m"] = start_depth - depths[-1]
+                        continue
+                    violations.append(
+                        ("recovery", f"recovery_required:keep_out:{box_index}:depth={start_depth:.4f}m")
+                    )
+                    continue
                 for step in range(len(points) - 1):
                     if segment_hits_box(points[step], points[step + 1], obstacle):
                         violations.append(

@@ -21,6 +21,7 @@ EXECUTION_MODES = ("sync", "lazy_async", "continuous_async")
 # Violation classes a policy may name, and the actions it may map them to.
 POLICY_ACTIONS = ("CLAMP", "SOFT_STOP", "E_STOP")
 POLICY_CLASSES = (
+    "recovery",
     "stale_action",
     "clock_skew",
     "structural",
@@ -32,6 +33,10 @@ POLICY_CLASSES = (
 )
 
 DEFAULT_POLICY = {
+    # A refusal to leave a violated region is not an emergency: the robot is
+    # already inside it, and latching a stop there leaves it there. Soft-stop
+    # keeps the arm held while the next chunk is allowed to improve things.
+    "recovery": "SOFT_STOP",
     "stale_action": "SOFT_STOP",
     "clock_skew": "SOFT_STOP",
     "structural": "SOFT_STOP",
