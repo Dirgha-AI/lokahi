@@ -68,6 +68,12 @@ def manifest(**overrides):
         "max_action_age_ms": 150.0,
         "watchdog_timeout_ms": 500.0,
         "control_period_ms": 20.0,
+        # Generous budget: these tests are about adapter behaviour, not about
+        # this machine's scheduling. Without it a loaded box overruns the gate's
+        # own deadline and the verdict flips to budget_exceeded, which made two
+        # different tests in this file fail intermittently. The budget check has
+        # its own test in test_vla_gate.py with an impossible deadline.
+        "max_gate_eval_us": 10_000_000.0,
         "workspace_aabb": BOX,
         "keep_out_aabbs": [],
         "kinematic_limits": {"max_pos_delta_m": 0.25},
