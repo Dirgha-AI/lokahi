@@ -1,0 +1,269 @@
+# LOKAHI CI for Gitea Actions and Forgejo Actions.
+#
+# Self-hosted replacement for .github/workflows/ci.yml, which stays in place for
+# as long as GitHub Actions minutes last. Publishing is not reproduced here:
+# .github/workflows/publish.yml relies on PyPI Trusted Publishing and OIDC, and
+# has no equivalent on a self-hosted forge.
+#
+# This file and .forgejo/workflows/ci.yml are byte-identical on purpose. Gitea
+# reads only .gitea/workflows/; Forgejo reads .forgejo/workflows/ first and falls
+# back to .gitea/workflows/, so the copy exists for forges where .forgejo/ is
+# authoritative. Keep them in sync: diff .gitea/workflows/ci.yml .forgejo/workflows/ci.yml
+#
+# Jobs land on any runner advertising the `self-hosted` label. The only upstream
+# action used is actions/checkout@v4. Everything else is an explicit command, so
+# a runner on an offline instance needs no action resolution beyond that one.
+# docs/CI_LOCAL.md covers runner setup, labels and registration.
+
+name: LOKAHI CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  CARGO_TERM_COLOR: never
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: self-hosted
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Python ${{ matrix.python-version }}
+        run: |
+          set -euo pipefail
+          want="${{ matrix.python-version }}"
+          found=""
+          for cand in "python${want}" "python$(printf '%s' "$want" | tr -d '.')"; do
+            if command -v "$cand" >/dev/null 2>&1; then
+              got="$("$cand" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+              if [ "$got" = "$want" ]; then
+                found="$cand"
+                break
+              fi
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo "Python $want is not installed on this runner." >&2
+            echo "Default python3 reports: $(python3 -V 2>&1 || echo 'not found')" >&2
+            echo "Install python$want (or a python$want shim) and re-run, see docs/CI_LOCAL.md." >&2
+            exit 1
+          fi
+          echo "LOKAHI_PY=$(command -v "$found")" >> "$GITHUB_ENV"
+          "$found" -V
+
+      - name: Ensure venv with optional runtime dependencies
+        run: |
+          set -euo pipefail
+          venv="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/lokahi-venv-${{ matrix.python-version }}"
+          if [ ! -f "$venv/.lokahi-ci-ready" ]; then
+            rm -rf "$venv"
+            "$LOKAHI_PY" -m venv "$venv"
+            "$venv/bin/python" -m pip install --upgrade pip
+            "$venv/bin/python" -m pip install "cryptography>=42.0" "wasmtime>=15.0"
+            : > "$venv/.lokahi-ci-ready"
+          fi
+          echo "LOKAHI_PY=$venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Ensure Rust and the wasm32 target
+        run: |
+          set -euo pipefail
+          if ! command -v cargo >/dev/null 2>&1; then
+            echo "cargo is not on PATH; the WASM pre-flight module cannot be built." >&2
+            exit 1
+          fi
+          if command -v rustup >/dev/null 2>&1; then
+            rustup target add wasm32-unknown-unknown
+          else
+            echo "rustup not found; assuming the runner already ships wasm32-unknown-unknown" >&2
+          fi
+          cargo --version
+          rustc -vV | grep '^host:'
+
+      - name: Build the WASM pre-flight module
+        working-directory: tools/wasm_preflight
+        run: cargo build --target wasm32-unknown-unknown --release
+
+      - name: Core unit tests
+        run: |
+          "$LOKAHI_PY" tests/test_core.py
+
+      - name: Decisions tier tests (tier is off by default)
+        run: |
+          "$LOKAHI_PY" tests/test_decisions.py
+
+      - name: Threshold consent tests
+        run: |
+          "$LOKAHI_PY" tests/test_threshold_consent.py
+
+      - name: Fail-secure and WebXR tests
+        run: |
+          "$LOKAHI_PY" tests/test_failsecure.py
+
+      - name: Audit regression tests (C1-C4, H1-H3, M1, hardening)
+        run: |
+          "$LOKAHI_PY" tests/test_audit_regressions.py
+
+      - name: R1 feature tests (tool pinning, evidence packs, HTTP transport, OAuth, ACL)
+        run: |
+          "$LOKAHI_PY" tests/test_r1_features.py
+
+      - name: Telemetry tests (OTLP, Splunk, Elastic, webhook)
+        run: |
+          "$LOKAHI_PY" tests/test_telemetry.py
+
+      - name: Approval tests (links, channels, /approve)
+        run: |
+          "$LOKAHI_PY" tests/test_approvals.py
+
+      - name: Policy pack tests
+        run: |
+          "$LOKAHI_PY" tests/test_policy_packs.py
+
+      - name: Property tests (merge precedence, canonical stability)
+        run: |
+          "$LOKAHI_PY" tests/test_properties.py
+
+      - name: Conformance suite
+        run: |
+          "$LOKAHI_PY" tools/conformance.py
+
+      - name: MCP gateway self-test (includes trust-boundary attacks)
+        run: |
+          "$LOKAHI_PY" tools/mcp_stdio_proxy.py --self-test
+
+      - name: Wargame lab
+        run: |
+          "$LOKAHI_PY" tools/run_wargame_workshop.py
+
+      - name: Gateway demo
+        run: |
+          "$LOKAHI_PY" demo.py
+
+      - name: Editorial desk pilot
+        run: |
+          "$LOKAHI_PY" examples/editorial_desk_demo.py
+
+      - name: Red-team benchmark (50 adversarial + 200 benign)
+        run: |
+          "$LOKAHI_PY" tools/run_evals.py
+
+      - name: Ghostproof benchmark
+        run: |
+          "$LOKAHI_PY" tools/run_ghostproof_evals.py
+
+      - name: Kinetic Ahimsa robotics verification
+        run: |
+          "$LOKAHI_PY" tools/run_kinetic_evals.py
+
+  rust:
+    name: Rust WASM kernel
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure Rust and the wasm32 target
+        run: |
+          set -euo pipefail
+          if ! command -v cargo >/dev/null 2>&1; then
+            echo "cargo is not on PATH; cannot run the Rust kernel job." >&2
+            exit 1
+          fi
+          if command -v rustup >/dev/null 2>&1; then
+            rustup target add wasm32-unknown-unknown
+          else
+            echo "rustup not found; assuming the runner already ships wasm32-unknown-unknown" >&2
+          fi
+          cargo --version
+
+      - name: Unit tests
+        working-directory: tools/wasm_preflight
+        run: cargo test --release
+
+      - name: Build for wasm32
+        working-directory: tools/wasm_preflight
+        run: cargo build --target wasm32-unknown-unknown --release
+
+  packaging:
+    name: Packaging and CLI
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Python 3.12
+        run: |
+          set -euo pipefail
+          found=""
+          for cand in python3.12 python312; do
+            if command -v "$cand" >/dev/null 2>&1; then
+              got="$("$cand" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+              if [ "$got" = "3.12" ]; then
+                found="$cand"
+                break
+              fi
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo "Python 3.12 is not installed on this runner." >&2
+            echo "Default python3 reports: $(python3 -V 2>&1 || echo 'not found')" >&2
+            exit 1
+          fi
+          echo "LOKAHI_PY=$(command -v "$found")" >> "$GITHUB_ENV"
+          "$found" -V
+
+      - name: Create venv for building
+        run: |
+          set -euo pipefail
+          venv="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/lokahi-packaging-venv"
+          rm -rf "$venv"
+          "$LOKAHI_PY" -m venv "$venv"
+          echo "LOKAHI_PY=$venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Validate pyproject
+        run: |
+          set -euo pipefail
+          "$LOKAHI_PY" -c "import tomllib,sys; tomllib.load(open('pyproject.toml','rb')); print('pyproject OK')"
+
+      - name: Build wheel
+        run: |
+          set -euo pipefail
+          "$LOKAHI_PY" -m pip install --upgrade pip build
+          "$LOKAHI_PY" -m build --wheel
+
+      - name: Install the built wheel
+        run: |
+          set -euo pipefail
+          "$LOKAHI_PY" -m pip install dist/*.whl cryptography
+          "$LOKAHI_PY" -c "import tools.mcp_stdio_proxy as m; print('import OK')"
+
+      - name: CLI end-to-end (Ed25519 + HMAC)
+        run: |
+          set -euo pipefail
+          "$LOKAHI_PY" tests/test_audit_regressions.py TestC3CLIFlows
+
+      - name: No build artifacts staged
+        run: |
+          if git status --porcelain | grep -E 'tools/wasm_preflight/target|\.wasm$'; then
+            echo "build artifacts are not ignored" >&2
+            exit 1
+          fi
+          echo "clean"

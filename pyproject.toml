@@ -34,6 +34,9 @@ dependencies = []
 [project.optional-dependencies]
 signatures = ["cryptography>=42.0"]
 wasm = ["wasmtime>=15.0"]
+# Benchmark only: the published constraint-cost suite measured by
+# benchmarks/safety_gymnasium_runner.py. Never a runtime dependency.
+safety-gymnasium = ["safety-gymnasium>=1.0"]
 slm = [
   "onnxruntime>=1.17",
   "llama-cpp-python>=0.2",

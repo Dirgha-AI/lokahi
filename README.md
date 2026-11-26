@@ -232,6 +232,70 @@ LOKAHI is designed to be runtime-agnostic:
 
 ---
 
+## Vision-Language-Action Gate (experimental)
+
+The newest tier, `tools/vla/`, puts the same refusal logic in front of a chunked robot policy. A Vision-Language-Action model proposes a short chunk of setpoints; `LokahiVLAGate` decides, before the first one moves, whether the chunk may execute as written, may execute truncated, or must not execute at all. It catches the two failures chunked policies actually produce — a chunk computed from an observation the world has already left, and a path that sweeps through a keep-out region while both of its endpoints look legal — from limits read out of the same signed manifest, with no learned component and no dependency beyond the standard library. It is not part of the safety claim above, and it is not a safety-rated control function.
+
+```python
+import sys
+import time
+
+sys.path.insert(0, "tools")                      # the gate lives in this tree, not on PyPI
+from lokahi import Signer, digest
+from vla import LokahiVLAGate
+
+manifest = {
+    "physical_envelope": {"max_contact_force_n": 140.0},
+    "physical_vla": {
+        "max_action_age_ms": 150.0,
+        "watchdog_timeout_ms": 500.0,
+        "workspace_aabb": [0.2, -0.6, 0.0, 1.4, 0.6, 1.2],
+        "keep_out_aabbs": [[0.6, 0.2, 0.0, 0.8, 0.4, 1.2]],
+        "kinematic_limits": {"max_pos_delta_m": 0.05},
+    },
+}
+
+signer = Signer(b"a-32-byte-development-key-000000")   # your own key, loaded from a file
+def verify_raw_document(document):
+    body = {k: v for k, v in document.items() if k != "signature"}
+    return signer.verify(digest(1, body).encode(), document.get("signature", ""))
+manifest["signature"] = signer.sign(digest(1, manifest).encode())
+
+gate = LokahiVLAGate.from_manifest(manifest, verifier=verify_raw_document)
+now = time.monotonic_ns()
+result = gate.evaluate_step(
+    obs_ts_ns=now - 20_000_000,
+    now_ts_ns=now,
+    robot_state={"ee_pos": [0.4, 0.0, 0.6], "ee_quat": [1.0, 0.0, 0.0, 0.0], "joint_pos": [0.0]},
+    action_chunk=[{"ee_pos": [0.43, 0.0, 0.6], "duration_ms": 20.0}],
+    wrench={"force_n": 12.0},
+)
+print(result.verdict, result.state, result.interlock, result.allowed)
+```
+
+```text
+COMPLIANT ARMED pass True
+```
+
+The verifier is the point of the example: it hashes the raw document, `physical_vla` included, because a `lokahi.Manifest` round trip omits that section and would leave the gate's limits unsigned. The full contract — the nine checks in order, the state machine, the ledger projection, and the limits of what this version knows — is in [`docs/LOKAHI_VLA.md`](docs/LOKAHI_VLA.md).
+
+### Benchmarks and reproduction
+
+`benchmarks/vla_lag_and_safety_bench.py` drives one synthetic arm along a fixed route twice, ungated and gated, with 0–500 ms of injected observation latency across the three execution modes, and injects adversarial chunks against the ungated baseline:
+
+```bash
+py -3 benchmarks/vla_lag_and_safety_bench.py          # human table
+py -3 benchmarks/vla_lag_and_safety_bench.py --json   # machine-readable
+```
+
+Of 120 adversarial executions, 0 reach the actuator with the gate in line, against 94 of 120 ungated. The false-clamp rate on benign chunks is 0%. The latency columns in that table are only meaningful on a quiet machine — the figures quoted here are the safety counts, and timing on a loaded box is noise, so none of it is published as a latency claim.
+
+A Safety-Gymnasium runner (`benchmarks/safety_gymnasium_runner.py`) is in progress and not yet in this tree; its table is unpublished, so its absence here is not a result either way.
+
+These numbers are simulation only: no hardware, no cell, no certification. The ["What this is not"](docs/LOKAHI_VLA.md#what-this-is-not) section of the gate document says what they do not prove.
+
+---
+
 ## Known Limits & Scope
 
 1. **Independent External Review**: An internal audit of record is published in [`AUDIT_REPORT.md`](AUDIT_REPORT.md); independent third-party external review is on the roadmap.
@@ -248,11 +312,14 @@ LOKAHI is designed to be runtime-agnostic:
 | [`tools/mcp_stdio_proxy.py`](tools/mcp_stdio_proxy.py) | Model Context Protocol (MCP) JSON-RPC proxy gate & self-test |
 | [`tools/lokahi_sign.py`](tools/lokahi_sign.py) | Cryptographic key generation & manifest signing CLI |
 | [`tools/lokahi_approve.py`](tools/lokahi_approve.py) | Out-of-band Ed25519 action consent signing CLI |
+| [`tools/vla/`](tools/vla/) | VLA gate for chunked robot policies: freshness, watchdog, swept keep-in/keep-out geometry, kinematics, wrench |
 | [`examples/`](examples/) | Complete boundary manifests, approvers lists, and editorial desk demo |
 | [`tests/test_core.py`](tests/test_core.py) | 70 core security tests and adversarial attacks |
 | [`tests/test_decisions.py`](tests/test_decisions.py) | 32 tests for learned decisions monotonicity |
 | [`data/`](data/) | Canonical 50-scenario Red-Team evaluation corpus (CC BY 4.0) |
+| [`benchmarks/vla_lag_and_safety_bench.py`](benchmarks/vla_lag_and_safety_bench.py) | Latency-injection and adversarial benchmark, gated vs ungated |
 | [`docs/SPEC.md`](docs/SPEC.md) | Full technical specification: manifest fields, rule ordering, vote binding |
+| [`docs/LOKAHI_VLA.md`](docs/LOKAHI_VLA.md) | VLA gate contract: the nine checks in order, state machine, ledger projection, non-claims |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release history and version notes |
 
 ---

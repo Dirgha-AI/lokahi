@@ -456,16 +456,20 @@ class TestOffByDefault(unittest.TestCase):
             default, off, on = run([]), run(["--decisions", "off"]), run(["--decisions", "experimental"])
         self.assertTrue(default["allowed"])
 
-        # Receipts carry a second-resolution `ts`, so two CLI runs that straddle
-        # a second boundary differ only in that field; drop it before comparing.
-        def without_ts(value):
+        # Two CLI runs that straddle a second boundary differ in the ledger
+        # timestamp and in the hash sealed over it: `ledger_hash` is the digest of
+        # an entry body that includes the second-resolution `ts`. Both are a clock
+        # reading, not a decision, so compare the receipts without them.
+        volatile = ("ts", "ledger_hash")
+
+        def without_volatile(value):
             if isinstance(value, dict):
-                return {k: without_ts(v) for k, v in value.items() if k != "ts"}
+                return {k: without_volatile(v) for k, v in value.items() if k not in volatile}
             if isinstance(value, list):
-                return [without_ts(v) for v in value]
+                return [without_volatile(v) for v in value]
             return value
 
-        self.assertEqual(without_ts(default), without_ts(off))
+        self.assertEqual(without_volatile(default), without_volatile(off))
         self.assertNotIn("decisions", default["lokahi_receipt"])
         self.assertFalse(on["allowed"])
         self.assertTrue(on["error"]["data"]["reasons"][0].startswith("decisions_tier:"))

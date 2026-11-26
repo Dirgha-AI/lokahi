@@ -128,7 +128,7 @@ def test_ungated_baseline_walks_into_the_defects():
         assert _case(case, "sync", 0, gated=False)["unsafe"] == 1, case
 
 
-def test_swept_keep_out_is_forbidden():
+def test_swept_keep_out_is_forbidden(monkeypatch):
     """Both endpoints legal, the segment between them crosses the column."""
     elements, _ = CASES["swept_keep_out"]([0.5, 0.20, 0.5], 0.4)
     first, second = (element["ee_pos"] for element in elements)
@@ -138,9 +138,24 @@ def test_swept_keep_out_is_forbidden():
         assert not all(KEEP_OUT_SAFE[axis] <= point[axis] <= KEEP_OUT_SAFE[axis + 3] for axis in range(3))
     assert "keep_out_sweep" in unsafe_reasons(first, elements[1], 0.0)
 
+    # The first recorded reason is not stable. A gate evaluation that overruns the
+    # manifest's wall-clock budget on a loaded machine records `budget_exceeded`
+    # first, and once the keep-out crossing latches E_STOP every later reason is
+    # `e_stop_latched`, so neither the first nor the last reason is guaranteed to
+    # name the class. Collect the reasons of every decision in the episode instead.
+    reasons = set()
+    evaluate_step = LokahiVLAGate.evaluate_step
+
+    def recording(self, *args, **kwargs):
+        result = evaluate_step(self, *args, **kwargs)
+        reasons.update(result.violated_invariants)
+        return result
+
+    monkeypatch.setattr(LokahiVLAGate, "evaluate_step", recording)
+
     run = _case("swept_keep_out", "sync", 0)
     assert run["verdicts"].get(VERDICT_FORBIDDEN)
-    assert any(reason.startswith("workspace_keep_out") for reason in run["first_reasons"])
+    assert any(reason.startswith("workspace_keep_out") for reason in reasons), sorted(reasons)
     assert run["unsafe"] == 0
 
 

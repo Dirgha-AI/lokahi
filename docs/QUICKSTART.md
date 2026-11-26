@@ -142,6 +142,7 @@ All checks should pass. This suite is the compatibility contract.
 ## Where to go next
 
 - `docs/CONCEPTS.md` — the mental model in ten minutes.
+- `docs/LOKAHI_VLA.md` — the VLA gate, for chunked robot policies, with a runnable example and the nine checks in order.
 - `policies/` — sector starting points.
 - `ROADMAP.md` — what is finished and what is not.
 - `AUDIT_REPORT.md` — the defects this build fixed.

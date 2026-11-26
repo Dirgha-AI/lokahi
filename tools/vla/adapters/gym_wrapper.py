@@ -39,6 +39,16 @@ together with the clock reading at which it arrived.
        evaluation time, clamped index — so a training loop can log
        interventions without importing the gate.
 
+Cost-reporting envs (Safety-Gymnasium and the rest of the constrained-RL
+family) return six values, `(obs, reward, cost, terminated, truncated, info)`,
+where `cost` is that step's constraint violation. The cost is never dropped:
+the caller always gets the five-element tuple back, and the step's cost is
+surfaced as `info["lokahi_cost"]`, beside `info["lokahi_vla"]`. A refused step
+on such an env reports `lokahi_cost: 0.0` — the env was not stepped, so no
+constraint was violated — but only once the wrapped env has been seen to
+report a cost at all, so an ordinary four- or five-value env never grows a
+cost key it does not have.
+
 A refusal is not an exception. Crashing the training loop on every
 intervention pushes people to remove the gate; returning the previous
 observation with the verdict in `info` keeps the loop running and keeps the
@@ -78,6 +88,7 @@ from ..vla_gate import (
 )
 
 LOCAL_INFO_KEY = "lokahi_vla"
+LOCAL_COST_KEY = "lokahi_cost"
 
 Clock = Callable[[], int]
 Translator = Callable[[Any], list]
@@ -118,6 +129,7 @@ class VLAGatedEnv:
         self.last_result: VLADecisionResult | None = None
         self.steps = 0
         self.refusals = 0
+        self.reports_cost = False
 
     # -- gym surface --------------------------------------------------------
 
@@ -165,14 +177,19 @@ class VLAGatedEnv:
             self.refusals += 1
             info: dict = {}
             observation, reward, terminated, truncated = self.observation, 0.0, False, False
+            cost = 0.0 if self.reports_cost else None
         else:
             allowed_chunk = _allowed_chunk(chunk, result)
             produced = self.env.step(self.from_chunk(allowed_chunk, result))
-            observation, reward, terminated, truncated, info = _normalise_step_result(produced)
+            observation, reward, terminated, truncated, info, cost = _normalise_step_result(produced)
             self.observation = observation
             self.obs_ts_ns = int(self.clock())
+            if cost is not None:
+                self.reports_cost = True
 
         info = dict(info or {})
+        if cost is not None:
+            info[LOCAL_COST_KEY] = cost
         info[LOCAL_INFO_KEY] = decision_info(result)
         return observation, reward, terminated, truncated, info
 
@@ -219,23 +236,29 @@ def _allowed_chunk(chunk: list, result: VLADecisionResult) -> list:
     return chunk
 
 
-def _normalise_step_result(produced: Any) -> tuple[Any, float, bool, bool, dict]:
+def _normalise_step_result(produced: Any) -> tuple[Any, float, bool, bool, dict, float | None]:
     if not isinstance(produced, (tuple, list)):
         raise TypeError(
             f"wrapped env .step() must return a tuple, got {type(produced).__name__}"
         )
     parts = list(produced)
-    if len(parts) == 5:
+    if len(parts) == 6:
+        observation, reward, cost, terminated, truncated, info = parts
+        cost = float(cost)
+    elif len(parts) == 5:
         observation, reward, terminated, truncated, info = parts
+        cost = None
     elif len(parts) == 4:
         observation, reward, terminated, info = parts
         truncated = False
+        cost = None
     else:
         raise ValueError(
             f"wrapped env .step() returned {len(parts)} values; expected the 4-element "
-            "(obs, reward, done, info) or 5-element (obs, reward, terminated, truncated, info) form"
+            "(obs, reward, done, info), 5-element (obs, reward, terminated, truncated, info) "
+            "or 6-element (obs, reward, cost, terminated, truncated, info) form"
         )
-    return observation, float(reward), bool(terminated), bool(truncated), info
+    return observation, float(reward), bool(terminated), bool(truncated), info, cost
 
 
 def _refused(reason: str) -> VLADecisionResult:
