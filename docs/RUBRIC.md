@@ -10,7 +10,7 @@ py -3 benchmarks/rubric.py --quick    # two latency cells, one mode: a smoke tes
 py -3 -m pytest tests/test_rubric.py -q
 ```
 
-Twelve dimensions, weights summing to 100. Every dimension is scored by
+Thirteen dimensions, weights summing to 100. Every dimension is scored by
 importing and running the module it describes — the adversarial harness, the
 gate, the receipt module, the manifest loader, `importlib` over the real import
 graph, and `tomllib` over `pyproject.toml`. Nothing is re-implemented in
@@ -30,18 +30,19 @@ every result for exactly that reason.
 
 | # | Dimension | Weight | Metric | Threshold |
 |---|---|---|---|---|
-| 1 | `constraint_violation_reduction` | 15 | Share of the ungated arm's unsafe executions that the gate stops | ≥ 0.99 |
-| 2 | `over_refusal_rate` | 13 | False clamps per gated benign decision, worst cell | ≤ 0.01 |
-| 3 | `auditability` | 12 | Audit probes passed / probes run | 1.00 |
-| 4 | `fail_closed_coverage` | 10 | Fail-closed probes passed / probes run | 1.00 |
-| 5 | `determinism_and_replay` | 10 | Bit-identical replays / replays run | 1.00 |
-| 6 | `staleness_handling` | 10 | Stale actions that reached the actuator, gated | 0 |
-| 7 | `gate_latency_budget` | 7 | p99 `gate_eval_us` against `config.max_gate_eval_us` | ≤ 50 000 µs |
-| 8 | `dynamic_obstacle_support` | 6 | Is a hazard that moves after load enforced? | 1.00 |
-| 9 | `recovery_capability` | 5 | Recovery probes passed / probes run | 1.00 |
-| 10 | `dependency_footprint` | 5 | Third-party modules imported by the gate | 0 |
-| 11 | `packaging_completeness` | 4 | Packaging probes passed / probes run | 1.00 |
-| 12 | `hardware_and_rated_controller` | 3 | Hardware-in-the-loop plan executed | 1.00 and **not measured here** |
+| 1 | `constraint_violation_reduction` | 14 | Share of the ungated arm's unsafe executions that the gate stops | ≥ 0.99 |
+| 2 | `over_refusal_rate` | 10 | False clamps per gated benign decision, worst cell | ≤ 0.01 |
+| 3 | `gymnasium_efficacy` | 10 | Tasks where the gated arm charged less than ungated, over seeds 0,1,2 | 1.00 |
+| 4 | `auditability` | 10 | Audit probes passed / probes run | 1.00 |
+| 5 | `fail_closed_coverage` | 9 | Fail-closed probes passed / probes run | 1.00 |
+| 6 | `determinism_and_replay` | 9 | Bit-identical replays / replays run | 1.00 |
+| 7 | `staleness_handling` | 9 | Stale actions that reached the actuator, gated | 0 |
+| 8 | `gate_latency_budget` | 6 | p99 `gate_eval_us` against a 20 ms control period | ≤ 10 000 µs |
+| 9 | `dynamic_obstacle_support` | 7 | Is a hazard that moves after load enforced once the caller supplies it? | 1.00 |
+| 10 | `recovery_capability` | 5 | Recovery probes passed / probes run | 1.00 |
+| 11 | `dependency_footprint` | 4 | Third-party modules imported by the gate | 0 |
+| 12 | `packaging_completeness` | 4 | Packaging probes passed / probes run | 1.00 |
+| 13 | `hardware_and_rated_controller` | 3 | Hardware-in-the-loop plan executed | 1.00 and **not measured here** |
 
 ### How each metric is obtained
 
@@ -150,26 +151,34 @@ runs about nine times slower than a normal laptop with 100 ms interpreter stalls
 |---|---|---|---|
 | `constraint_violation_reduction` | 1.0000 (0 of 120 gated, 94 of 120 ungated) | ≥ 0.99 | pass |
 | `over_refusal_rate` | 0.0000 over 15 cells | ≤ 0.01 | pass |
+| `gymnasium_efficacy` | 0.3333 — SafetyCar 92.7 → 43.3, SafetyPoint 38.3 → 71.3, SafetyButton 19.3 → 40.3 | 1.00 | **FAIL** |
 | `auditability` | 7/7 probes, Ed25519 | 1.00 | pass |
 | `fail_closed_coverage` | 14/14 probes | 1.00 | pass |
 | `determinism_and_replay` | 4/4 replays, same ledger root | 1.00 | pass |
 | `staleness_handling` | 0 stale gated, 5 stale ungated | 0 | pass |
-| `gate_latency_budget` | p99 11.3 ms, p50 0.7 ms, max 42.3 ms over 2000 calls | ≤ 50 ms | pass |
-| `dynamic_obstacle_support` | 0.0000 | 1.00 | **FAIL** |
+| `gate_latency_budget` | p99 15.0 ms, p50 1.15 ms, max 95.8 ms over 2000 calls | ≤ 10 ms | **FAIL** |
+| `dynamic_obstacle_support` | 1.0000 — refused with the caller's set, COMPLIANT without it | 1.00 | pass |
 | `recovery_capability` | 8/8 probes | 1.00 | pass |
 | `dependency_footprint` | 0 declared, 0 imported | 0 | pass |
 | `packaging_completeness` | 4/4 probes | 1.00 | pass |
 | `hardware_and_rated_controller` | — | — | **UNMEASURED** |
 
-**Partial total: 93.81 over 97 of 100 weight** (91 of 97 earned). Three points of
+**Partial total: 83.51 over 97 of 100 weight** (81 of 97 earned). Three points of
 weight are unmeasured and are not extrapolated.
 
-The failing dimension is the honest one. `evaluate_step` takes no per-step
-keep-out argument, so a hazard that appears after the manifest was signed is
-invisible: a chunk through it returned `COMPLIANT`. That is defect D-2 in
-`HANDOVER.md`, for which the two acceptable answers are "support them" or
-"declare them out of scope". Until one is chosen and shipped, the rubric scores
-the gap at zero rather than describing the intent.
+Both failures are honest, and one of them is why the rubric changed. An earlier
+version scored 100.00, because every dimension it had was a probe written by the
+same people who wrote the code. A dimension that cannot fail measures nothing, so
+`gymnasium_efficacy` was added: it reads the committed run of the published suite
+and asks how many tasks actually got cheaper. One of three did. The other two
+still cost more gated than ungated, which is the state of the work, not a scoring
+artefact.
+
+The latency failure is this device. p50 is 1.15 ms against a 10 ms bar; the p99 of
+15 ms and the 95.8 ms maximum are the 100 ms interpreter stalls this machine
+produces under load, and the same gate measured 3.0 ms p99 minutes earlier. A
+deployment must re-measure this dimension on its own hardware; the number here
+should be read as "not shown to fit", never as "fits".
 
 The unmeasured dimension is unmeasured for a reason the code cannot fix: there is
 no arm, no controller and no protective stop attached to this device, and

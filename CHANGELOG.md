@@ -47,6 +47,21 @@ pass straight through an obstacle with both of its endpoints legal.
 - **Forward kinematics** — `joint_trajectory_to_chunk(chain=...)` runs FK on a
   URDF itself, so a ROS 2 `JointTrajectory` can be gated without an externally
   captured Cartesian path. Pinocchio is the optional backend beyond a serial chain.
+- **Hardening** — seven fail-open paths found by an adversarial audit are closed
+  with tests that fail on the pre-fix tree: `duration_ms` is validated before use,
+  the current-pose guard covers shapes and caller keep-outs, joint limits refuse
+  rather than skip without `joint_pos`, a configured force ceiling refuses an
+  unverifiable wrench, the recovery rule cannot leave the workspace, a re-planned
+  stop is swept before it is offered, and an unsigned manifest is refused at
+  construction. The rotation bound also survives an element without `ee_quat`.
+- **Rubric** — `benchmarks/rubric.py` scores thirteen weighted dimensions from
+  real runs: **83.51 partial over 97 of 100 weight**. Two dimensions fail:
+  `gymnasium_efficacy` (1 of 3 published tasks got cheaper) and
+  `gate_latency_budget` (p99 15 ms against a 10 ms bar on this device, p50 1.2 ms).
+  Three points of weight are unmeasured and never extrapolated.
+- **Alternatives** — `benchmarks/alternatives_bench.py` runs one corpus through
+  four shields: raw 94 of 120 cells leaked, clamp-only 40, geometry-only 36, this
+  gate 0, with zero over-refusals in any arm.
 - **Optional extras and `CREDITS.md`** — `lokahi[vla-geometry]`,
   `lokahi[vla-kinematics]`, `lokahi[vla-replan]` and `lokahi[vla]`. Nothing
   external is required at runtime and nothing external is vendored; every
