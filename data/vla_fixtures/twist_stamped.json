@@ -1,0 +1,10 @@
+{
+  "header": {
+    "stamp": {"sec": 1732099215, "nanosec": 310000000},
+    "frame_id": "base_link"
+  },
+  "twist": {
+    "linear": {"x": 0.05, "y": 0.00, "z": -0.02},
+    "angular": {"x": 0.00, "y": 0.00, "z": 0.10}
+  }
+}

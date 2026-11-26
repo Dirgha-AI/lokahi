@@ -1,0 +1,51 @@
+{
+  "header": {
+    "stamp": {"sec": 1732099215, "nanosec": 305000000},
+    "frame_id": "base_link"
+  },
+  "joint_names": [
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint"
+  ],
+  "points": [
+    {
+      "positions": [0.10, -1.20, 1.40, -1.75, -1.57, 0.00],
+      "velocities": [1.00, 1.00, -0.50, 0.50, 0.50, 1.00],
+      "accelerations": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "effort": [],
+      "time_from_start": {"sec": 0, "nanosec": 20000000}
+    },
+    {
+      "positions": [0.12, -1.18, 1.39, -1.74, -1.56, 0.02],
+      "velocities": [1.00, 1.00, -0.50, 0.50, 0.50, 1.00],
+      "accelerations": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "effort": [],
+      "time_from_start": {"sec": 0, "nanosec": 40000000}
+    },
+    {
+      "positions": [0.14, -1.16, 1.38, -1.73, -1.55, 0.04],
+      "velocities": [1.00, 1.00, -0.50, 0.50, 0.50, 1.00],
+      "accelerations": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "effort": [],
+      "time_from_start": {"sec": 0, "nanosec": 60000000}
+    },
+    {
+      "positions": [0.16, -1.14, 1.37, -1.72, -1.54, 0.06],
+      "velocities": [1.00, 1.00, -0.50, 0.50, 0.50, 1.00],
+      "accelerations": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "effort": [],
+      "time_from_start": {"sec": 0, "nanosec": 80000000}
+    },
+    {
+      "positions": [0.18, -1.12, 1.36, -1.71, -1.53, 0.08],
+      "velocities": [1.00, 1.00, -0.50, 0.50, 0.50, 1.00],
+      "accelerations": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "effort": [],
+      "time_from_start": {"sec": 0, "nanosec": 100000000}
+    }
+  ]
+}

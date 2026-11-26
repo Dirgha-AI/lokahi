@@ -55,10 +55,11 @@ lokahi-gateway = "lokahi.mcp_stdio_proxy:main"
 lokahi-sign = "lokahi.lokahi_sign:main"
 lokahi-approve = "lokahi.lokahi_approve:main"
 lokahi-conformance = "lokahi.conformance:main"
+lokahi-vla-verify = "lokahi.vla.rollout_receipt:main"
 
 [tool.setuptools]
 package-dir = {"lokahi" = "tools"}
-packages = ["lokahi", "lokahi.decisions"]
+packages = ["lokahi", "lokahi.decisions", "lokahi.vla"]
 
 [tool.setuptools.package-data]
 "lokahi.decisions" = ["model.json"]

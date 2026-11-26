@@ -278,6 +278,7 @@ class Manifest:
     tools: dict | None = None          # v0.1.3: per-tool policy table (see validate_tool_policy)
     approval_window_seconds: int | None = None  # v0.1.3: how long an approval round stays open
     consent_threshold: dict | None = None  # v1.0: {"m": 2, "n": 3} per-manifest consent threshold
+    physical_vla: dict | None = None  # v1.4: VLA gate bounds (see lokahi.vla.physical_manifest)
 
     REQUIRED = (
         "node",
@@ -313,6 +314,11 @@ class Manifest:
         # keep exactly the same canonical bytes and their signatures still verify.
         if self.consent_threshold is not None:
             d["consent_threshold"] = dict(sorted(self.consent_threshold.items()))
+        # v1.4: the VLA gate's bounds are signed with the manifest. Without this
+        # the gate would read limits that Manifest.sign() never covered, which
+        # makes a signed manifest a suggestion rather than a bound.
+        if self.physical_vla is not None:
+            d["physical_vla"] = dict(sorted(self.physical_vla.items()))
         return d
 
     def sign(self, signer: Signer) -> "Manifest":
@@ -350,6 +356,9 @@ class Manifest:
             ),
             consent_threshold=(
                 dict(data["consent_threshold"]) if data.get("consent_threshold") is not None else None
+            ),
+            physical_vla=(
+                dict(data["physical_vla"]) if data.get("physical_vla") is not None else None
             ),
         )
 
