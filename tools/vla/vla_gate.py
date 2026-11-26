@@ -6,7 +6,8 @@ decided before anything that merely makes it unsafe.
 
     1. latch      — E_STOP is absorbing until a human re-arms
     2. clock      — non-monotonic or future timestamps
-    3. structural — NaN/Inf, shape mismatch, non-unit quaternion
+    3. structural — NaN/Inf, shape mismatch, non-unit quaternion, and the
+                    caller's dynamic keep-out set against the manifest's caps
     4. freshness  — per-element age against max_action_age_ms
     5. watchdog   — gap since the last completed step
     6. geometry   — keep-in and keep-out sweep over the whole chunk
@@ -28,8 +29,14 @@ from typing import Any, Mapping, Sequence
 
 from lokahi import COMPLIANT, FORBIDDEN
 
-from . import geometry, replanning
-from .physical_manifest import PhysicalVLAConfig, load_physical_vla, load_physical_vla_file
+from . import geometry, recovery, replanning
+from .physical_manifest import (
+    PhysicalVLAConfig,
+    VLAManifestError,
+    load_physical_vla,
+    load_physical_vla_file,
+    parse_keep_out_shape,
+)
 
 ARMED = "ARMED"
 CLAMPED = "CLAMPED"
@@ -55,6 +62,9 @@ STATE_INTERLOCK = {
 _EPS = 1e-9
 _QUAT_TOL = 1e-6
 
+KEEP_OUT_SOURCE_MANIFEST = "manifest"
+KEEP_OUT_SOURCE_CALLER = "caller"
+
 
 @dataclass
 class VLADecisionResult:
@@ -69,6 +79,14 @@ class VLADecisionResult:
     interlock: str = "pass"
     clamped_from_index: int | None = None
     replanned_path: list[dict[str, Any]] = field(default_factory=list)
+    # Poses that leave the keep-out, when recovery_planning is on and a
+    # keep-out refusal fired. Empty otherwise. The refusal itself is unchanged.
+    escape_path: list[list[float]] = field(default_factory=list)
+    # Provenance of the keep-out set this step was checked against, so a
+    # receipt can say where the obstacles came from and an auditor can tell a
+    # static manifest from a caller that moved one.
+    keep_out_source: str = KEEP_OUT_SOURCE_MANIFEST
+    dynamic_keep_out_count: int = 0
 
     def to_decision(self):
         """A `lokahi.Decision` so the existing ledger carries VLA steps unchanged."""
@@ -252,6 +270,7 @@ class LokahiVLAGate:
         action_chunk: Sequence[Mapping[str, Any]],
         wrench: Mapping[str, Any] | None = None,
         source: str = "vla",
+        dynamic_keep_outs: Sequence[Mapping[str, Any]] | None = None,
     ) -> VLADecisionResult:
         started = time.perf_counter_ns()
         config = self.config
@@ -313,6 +332,18 @@ class LokahiVLAGate:
             # checks cannot run at all, and a gate that silently skips its own
             # checks is worse than no gate: it reports COMPLIANT.
             violations.append(("structural", "structural:robot_state_missing_ee_pos"))
+
+        # Per-step keep-outs are input, not manifest state, so they are
+        # validated next to the chunk's own structure and before anything
+        # geometric: an unauthorised or oversized set is refused even on a step
+        # whose geometry cannot run at all.
+        dynamic_shapes, dynamic_count, dynamic_reasons = _parse_dynamic_keep_outs(
+            config, dynamic_keep_outs
+        )
+        violations.extend(("dynamic_keep_out", reason) for reason in dynamic_reasons)
+        keep_out_source = (
+            KEEP_OUT_SOURCE_CALLER if dynamic_count or dynamic_reasons else KEEP_OUT_SOURCE_MANIFEST
+        )
 
         # 4. freshness, per element, not per chunk
         fresh = len(parsed)
@@ -400,22 +431,36 @@ class LokahiVLAGate:
                         break
             # Hazards with a real shape. A box around a disc refuses legal poses,
             # which showed up as 467 over-refusals on one benchmark task.
-            for shape_index, shape in enumerate(config.keep_out_shapes):
+            #
+            # A caller-supplied set rides the same sweep and the same monotone
+            # recovery rule; only the label differs, so a refusal names which
+            # set the obstacle came from.
+            sweep_targets = [
+                (f"shape_{shape_index}", f"{shape_index}", shape,
+                 f"keep_out_recovery_shape_{shape_index}_m")
+                for shape_index, shape in enumerate(config.keep_out_shapes)
+            ]
+            sweep_targets += [
+                (f"dynamic_{index}", f"dynamic_{index}", shape,
+                 f"keep_out_recovery_dynamic_{index}_m")
+                for index, shape in enumerate(dynamic_shapes)
+            ]
+            for sweep_label, recovery_label, shape, recovery_key in sweep_targets:
                 margin = config.tool_radius_m
                 start_depth = geometry.inside_depth(shape, points[0], margin)
                 if start_depth > 0.0:
                     depths = [geometry.inside_depth(shape, point, margin) for point in points]
                     if depths[-1] <= start_depth:
-                        margins[f"keep_out_recovery_shape_{shape_index}_m"] = start_depth - depths[-1]
+                        margins[recovery_key] = start_depth - depths[-1]
                         continue
                     violations.append(
-                        ("recovery", f"recovery_required:keep_out:{shape_index}:depth={start_depth:.4f}m")
+                        ("recovery", f"recovery_required:keep_out:{recovery_label}:depth={start_depth:.4f}m")
                     )
                     continue
                 for step in range(len(points) - 1):
                     if geometry.sweep_hits(shape, points[step], points[step + 1], margin):
                         violations.append(
-                            ("workspace_keep_out", f"workspace_keep_out:shape_{shape_index}:segment_{step}")
+                            ("workspace_keep_out", f"workspace_keep_out:{sweep_label}:segment_{step}")
                         )
                         break
 
@@ -512,7 +557,10 @@ class LokahiVLAGate:
         # 9. severity, then the budget check on the gate's own work
         if not violations:
             self.state = ARMED
-            return self._result(started, [], margins, robot_state, VERDICT_COMPLIANT, ARMED, None)
+            return self._result(
+                started, [], margins, robot_state, VERDICT_COMPLIANT, ARMED, None,
+                keep_out_source=keep_out_source, dynamic_keep_out_count=dynamic_count,
+            )
 
         self.interventions += 1
         decision = _decide(config, violations, clamp_limit)
@@ -527,6 +575,8 @@ class LokahiVLAGate:
             self.state,
             decision["clamped_index"],
             chunk=parsed,
+            keep_out_source=keep_out_source,
+            dynamic_keep_out_count=dynamic_count,
         )
 
     # -- result assembly ----------------------------------------------------
@@ -541,6 +591,8 @@ class LokahiVLAGate:
         state: str,
         clamped_index: int | None,
         chunk: list[dict[str, Any]] | None = None,
+        keep_out_source: str = KEEP_OUT_SOURCE_MANIFEST,
+        dynamic_keep_out_count: int = 0,
     ) -> VLADecisionResult:
         safe_action = None
         if verdict == VERDICT_CLAMPED and chunk:
@@ -598,6 +650,17 @@ class LokahiVLAGate:
                         "note": "deceleration from the last legal pose; gated again before execution",
                     }
 
+        escape: list[list[float]] = []
+        if (
+            self.config.recovery_planning
+            and verdict == VERDICT_FORBIDDEN
+            and state != E_STOP
+            and _keep_out_refusal(violations)
+        ):
+            escape, payload = self._escape_payload(robot_state)
+            if payload is not None:
+                safe_action = payload
+
         elapsed_us = (time.perf_counter_ns() - started_ns) / 1000.0
         reasons = [reason for _, reason in violations]
         if elapsed_us > self.config.max_gate_eval_us:
@@ -627,12 +690,99 @@ class LokahiVLAGate:
             interlock=STATE_INTERLOCK.get(state, "safe_mechanical_hold"),
             clamped_from_index=clamped_index,
             replanned_path=replanned,
+            escape_path=escape,
+            keep_out_source=keep_out_source,
+            dynamic_keep_out_count=dynamic_keep_out_count,
         )
+
+    def _escape_payload(
+        self, robot_state: Mapping[str, Any]
+    ) -> tuple[list[list[float]], dict[str, Any] | None]:
+        """A path out of the keep-out, and the payload that carries it.
+
+        The path is an offer beside the refusal, never a release of it: the
+        verdict, state and interlock are already decided and this function only
+        builds the second artefact. `tool_radius_m` is applied here so the
+        planner sees the swept volume, exactly as the geometry check does.
+        """
+        start = _try_vector(robot_state, "ee_pos", 3)
+        if start is None:
+            return [], None
+        radius = self.config.tool_radius_m
+        boxes = [_grow(box, radius) for box in self.config.keep_out_aabbs]
+        shapes = []
+        for shape in self.config.keep_out_shapes:
+            grown = dict(shape)
+            grown["radius"] = float(shape["radius"]) + radius
+            shapes.append(grown)
+        workspace = self.config.workspace_aabb
+        if workspace is not None:
+            workspace = _shrink(workspace, radius)
+            if workspace is None:
+                return [], None
+        try:
+            path = recovery.escape_path(
+                start, boxes, shapes, workspace,
+                self.config.recovery_step_m, self.config.recovery_max_steps,
+            )
+        except recovery.RecoveryError:
+            # A keep-out whose clearance cannot be measured gets no path. The
+            # hold stands; proposing an unverified escape would be worse.
+            return [], None
+        if not path:
+            return [], None
+        return path, {
+            "mode": "escape",
+            "setpoints": [{"ee_pos": list(pose)} for pose in path],
+            "note": "escape proposal only; the interlock holds until these setpoints are gated",
+        }
 
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+def _parse_dynamic_keep_outs(
+    config: PhysicalVLAConfig,
+    supplied: Any,
+) -> tuple[list[dict[str, Any]], int, list[str]]:
+    """Normalise a caller's per-step keep-outs against the manifest's caps.
+
+    Returns the shapes the sweep may use, how many the caller supplied, and the
+    reasons any of it was refused. A refusal returns no shapes at all: half a
+    hazard set is a gate that reports COMPLIANT while an obstacle is missing
+    from its view, so a set is either wholly checkable or wholly refused.
+    """
+    if supplied is None:
+        return [], 0, []
+    if not isinstance(supplied, Sequence) or isinstance(supplied, (str, bytes)):
+        return [], 0, ["dynamic_keep_out:not_a_shape_list"]
+
+    count = len(supplied)
+    if config.max_dynamic_keep_outs <= 0:
+        return [], count, [f"dynamic_keep_out:disabled:count={count}"]
+    if count > config.max_dynamic_keep_outs:
+        return [], count, [f"dynamic_keep_out:count:{count}>{config.max_dynamic_keep_outs}"]
+
+    shapes: list[dict[str, Any]] = []
+    reasons: list[str] = []
+    radius_cap = config.max_dynamic_radius_m
+    for index, raw in enumerate(supplied):
+        try:
+            shape = parse_keep_out_shape(f"dynamic_keep_outs[{index}]", raw)
+        except VLAManifestError as exc:
+            reasons.append(f"dynamic_keep_out:shape:{index}:{exc}")
+            continue
+        radius = shape.get("radius")
+        if radius_cap is not None and radius is not None and radius > radius_cap:
+            reasons.append(f"dynamic_keep_out:radius:{index}:{radius:.4f}m>{radius_cap}m")
+            continue
+        shapes.append(shape)
+
+    if reasons:
+        return [], count, reasons
+    return shapes, count, []
+
 
 def _chunk_velocity(chunk: Sequence[Mapping[str, Any]]) -> list[float] | None:
     """EE velocity over the last interval of a chunk, in m/s, or None if unknown."""
@@ -710,6 +860,22 @@ def _decide(
     return {"verdict": VERDICT_FORBIDDEN, "state": E_STOP, "clamped_index": None}
 
 
+def _keep_out_refusal(violations: Sequence[tuple[str, str]]) -> bool:
+    """Whether this refusal is about a keep-out volume.
+
+    Both spellings count: `workspace_keep_out` is a chunk that enters one, and
+    `recovery_required:keep_out` is a chunk that digs deeper into one the robot
+    is already inside. The second is the freeze this payload exists for — a gate
+    that only offered an escape from a clean start would offer it never.
+    """
+    for violation_class, reason in violations:
+        if violation_class == "workspace_keep_out":
+            return True
+        if violation_class == "recovery" and "keep_out" in reason:
+            return True
+    return False
+
+
 def _recovery_hint(
     config: PhysicalVLAConfig,
     reasons: list[str],
@@ -722,6 +888,11 @@ def _recovery_hint(
     if "stale_action" in classes:
         hint["action"] = "reobserve_and_replan_within_max_action_age_ms"
         hint["max_action_age_ms"] = config.max_action_age_ms
+    elif "dynamic_keep_out" in classes:
+        hint["action"] = "supply_a_manifest_authorised_keep_out_set"
+        hint["max_dynamic_keep_outs"] = config.max_dynamic_keep_outs
+        if config.max_dynamic_radius_m is not None:
+            hint["max_dynamic_radius_m"] = config.max_dynamic_radius_m
     elif "workspace_keep_out" in classes or "workspace_keep_in" in classes:
         hint["action"] = "replan_path_around_obstacle"
     elif "kinematic" in classes:

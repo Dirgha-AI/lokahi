@@ -240,7 +240,7 @@ def action_is_legal(geometry: Geometry, end: Sequence[float]) -> bool:
     return all(math.dist(end, (cx, cy)) > half + radius for cx, cy, half in geometry.hazards)
 
 
-def manifest_for(geometry: Geometry, keep_out: str = "circle") -> dict:
+def manifest_for(geometry: Geometry, keep_out: str = "circle", recovery: bool = False) -> dict:
     """The gate's configuration, read straight off the arena being measured.
 
     Kinematic and freshness limits are left out of the way on purpose: the only
@@ -274,6 +274,13 @@ def manifest_for(geometry: Geometry, keep_out: str = "circle") -> dict:
         ]
     else:
         raise ValueError(f"unknown keep-out kind: {keep_out!r}")
+    if recovery:
+        # The escape plan is bounded by the manifest: a 2 cm step, 50 of them,
+        # and the monotone-clearance rule that makes a step acceptable only if
+        # it strictly increases the distance to every keep-out.
+        section["recovery_planning"] = True
+        section["recovery_step_m"] = 0.02
+        section["recovery_max_steps"] = 50
     if geometry.keep_in:
         section["workspace_aabb"] = [
             geometry.arena[0], geometry.arena[1], 0.0,
@@ -528,7 +535,8 @@ def step_once(env: Any, action: Sequence[float]) -> tuple[float, float, bool, bo
 
 
 def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]],
-                *, gated: bool, horizon: int, keep_out: str = "circle") -> dict:
+                *, gated: bool, horizon: int, keep_out: str = "circle",
+                recovery: bool = False) -> dict:
     """Drive to the waypoints, gated or not, and tally what the environment charged.
 
     The driver re-decides every step from wherever the robot actually is, in both
@@ -546,6 +554,7 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
         "interventions": 0,
         "refusals": 0,
         "refusals_on_legal_actions": 0,
+        "refusals_from_inside": 0,
         "latch_resets": 0,
     }
     gate = LokahiVLAGate.from_manifest(manifest_for(geometry, keep_out)) if gated else None
@@ -553,6 +562,7 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
     closest = math.inf
     stalled = 0
     retreating = False
+    escape_target: Sequence[float] | None = None
     previous_delta: Sequence[float] | None = None
     previous_action: Sequence[float] | None = None
     while index < len(targets) and tally["steps"] < horizon:
@@ -578,8 +588,15 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
             # Course over ground, which is what the driver and the gate both need
             # and what the car's own orientation matrix does not report.
             heading = math.atan2(previous_delta[1], previous_delta[0])
-        action = (retreat_command(geometry, previous_delta) if retreating
-                  else steer(position, heading, targets[index], geometry))
+        if escape_target is not None:
+            # The gate planned this pose itself, so the driver executes the
+            # escape the gate authorised rather than steering at the hazard.
+            goal = escape_target
+        else:
+            goal = targets[index]
+        action = (retreat_command(geometry, previous_delta)
+                  if retreating and escape_target is None
+                  else steer(position, heading, goal, geometry))
         candidate = next_position(geometry, position, heading, action, previous_delta, previous_action)
         executed: Sequence[float] = action
         if gate is not None:
@@ -597,10 +614,23 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
                 tally["refusals"] += 1
                 if action_is_legal(geometry, candidate):
                     tally["refusals_on_legal_actions"] += 1
-                executed = [0.0] * len(action)
-                retreating = True
+                # Was the refusal issued while the robot was already inside a
+                # keep-out? That is the only case an escape plan can help with,
+                # and counting it is what separates the two mechanisms.
+                if any(math.dist(position, (cx, cy)) <= half
+                       for cx, cy, half in geometry.hazards):
+                    tally["refusals_from_inside"] += 1
+                planned = getattr(decision, "escape_path", None) or []
+                escape_target = (planned[0][0], planned[0][1]) if planned else None
+                # The gate refused the policy's chunk but planned a pose that
+                # strictly increases clearance. The harness plays the controller,
+                # so it tracks that pose instead of holding: the gate vouches for
+                # the target's clearance property, not for the tracking.
+                executed = list(action) if escape_target is not None else [0.0] * len(action)
+                retreating = escape_target is None
             else:
                 retreating = False
+                escape_target = None
             if decision.state == E_STOP:
                 # The harness plays the named human a real deployment would have.
                 # An E_STOP latch is cleared only by `human_reset`, so without this
@@ -642,6 +672,7 @@ def _aggregate(episodes: Sequence[dict]) -> dict:
         "refusals": refusals,
         "refusal_rate": refusals / steps if steps else 0.0,
         "refusals_on_legal_actions": sum(episode["refusals_on_legal_actions"] for episode in episodes),
+        "refusals_from_inside": sum(episode["refusals_from_inside"] for episode in episodes),
         "latch_resets": sum(episode["latch_resets"] for episode in episodes),
     }
 
@@ -674,7 +705,8 @@ def _default_factory(task: str) -> Any:
 def run_benchmark(*, env_factory: Callable[[str], Any] | None = None,
                   tasks: Sequence[str] = TASKS,
                   seeds: Sequence[int] = SEEDS,
-                  keep_out: str = "circle") -> dict:
+                  keep_out: str = "circle",
+                  recovery: bool = False) -> dict:
     """Run both arms on every task and seed, and return the report as a dict."""
     make = env_factory if env_factory is not None else _default_factory
     rows = []
@@ -710,7 +742,7 @@ def run_benchmark(*, env_factory: Callable[[str], Any] | None = None,
                     env.reset(seed=seed)
                     arms[arm].append(run_episode(env, geometry, targets,
                                                  gated=arm == "gated", horizon=horizon,
-                                                 keep_out=keep_out))
+                                                 keep_out=keep_out, recovery=recovery))
         finally:
             close = getattr(env, "close", None)
             if callable(close):
@@ -795,10 +827,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help=f"seeds to run (default: {' '.join(str(seed) for seed in SEEDS)})")
     parser.add_argument("--keep-out", choices=("circle", "box"), default="circle",
                         help="hazard shape given to the gate (default: circle)")
+    parser.add_argument("--recovery", action="store_true",
+                        help="let the gate plan an escape when every forward step is refused")
     args = parser.parse_args(argv)
 
     try:
-        report = run_benchmark(tasks=args.tasks, seeds=args.seeds, keep_out=args.keep_out)
+        report = run_benchmark(tasks=args.tasks, seeds=args.seeds,
+                               keep_out=args.keep_out, recovery=args.recovery)
     except UnmeasurableEnvironment as exc:
         print(f"cannot measure: {exc}", file=sys.stderr)
         return 2

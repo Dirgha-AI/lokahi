@@ -279,6 +279,16 @@ COMPLIANT ARMED pass True
 
 The verifier is the point of the example: it hashes the raw document, `physical_vla` included, because a `lokahi.Manifest` round trip omits that section and would leave the gate's limits unsigned. The full contract — the nine checks in order, the state machine, the ledger projection, and the limits of what this version knows — is in [`docs/LOKAHI_VLA.md`](docs/LOKAHI_VLA.md).
 
+### Optional extras
+
+The gate and its geometry, kinematics and re-planning modules import and run on the standard library alone; none of the extras below is needed to gate a step, and a missing extra is a refusal that names it, never a silent pass.
+
+- `pip install 'lokahi[vla-geometry]'` — COAL, for a `keep_out_shapes` entry of kind `mesh`; circles, cylinders, spheres and capsules are swept analytically without it.
+- `pip install 'lokahi[vla-kinematics]'` — Pinocchio, for a kinematics model beyond a serial URDF chain; a serial chain is evaluated in plain Python.
+- `pip install 'lokahi[vla-replan]'` — Ruckig, for a time-optimal stop profile; a jerk-limited analytic stop is built in.
+
+Third-party attribution for each backend is in [`CREDITS.md`](CREDITS.md).
+
 ### Benchmarks and reproduction
 
 `benchmarks/vla_lag_and_safety_bench.py` drives one synthetic arm along a fixed route twice, ungated and gated, with 0–500 ms of injected observation latency across the three execution modes, and injects adversarial chunks against the ungated baseline:

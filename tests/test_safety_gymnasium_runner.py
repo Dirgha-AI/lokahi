@@ -523,3 +523,11 @@ def test_the_box_keep_out_is_still_available_for_the_comparison():
 def test_an_unknown_keep_out_kind_is_refused():
     with pytest.raises(ValueError, match="keep-out kind"):
         runner.manifest_for(_geometry(), "hexagon")
+
+
+def test_recovery_is_off_unless_asked_for():
+    assert "recovery_planning" not in runner.manifest_for(_geometry())["physical_vla"]
+    section = runner.manifest_for(_geometry(), "circle", True)["physical_vla"]
+    assert section["recovery_planning"] is True
+    assert section["recovery_step_m"] == pytest.approx(0.02)
+    assert section["recovery_max_steps"] == pytest.approx(50)

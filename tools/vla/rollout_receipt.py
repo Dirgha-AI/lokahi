@@ -52,6 +52,9 @@ from .vla_gate import VERDICT_CLAMPED, VERDICT_COMPLIANT, VERDICT_FORBIDDEN
 
 RECEIPT_FORMAT = "lokahi-vla-receipt/1"
 VERDICTS = (VERDICT_COMPLIANT, VERDICT_CLAMPED, VERDICT_FORBIDDEN)
+# Where the keep-out set a step was checked against came from. A receipt must
+# not let a caller's moving obstacle pass as a static manifest shape.
+KEEP_OUT_SOURCES = ("manifest", "caller")
 
 ALGORITHM_ED25519 = "ed25519"
 ALGORITHM_HMAC = "hmac-sha256"
@@ -243,6 +246,12 @@ class RolloutReceipt:
         obs_to_action_ms = (int(now_ts_ns) - int(obs_ts_ns)) / 1e6
         gate_eval_us = float(getattr(decision, "gate_eval_us", 0.0) or 0.0)
         safe_action = getattr(decision, "safe_action", None)
+        keep_out_source = getattr(decision, "keep_out_source", "manifest")
+        if keep_out_source not in KEEP_OUT_SOURCES:
+            raise ReceiptError(f"decision names an unknown keep_out_source: {keep_out_source!r}")
+        dynamic_keep_outs = getattr(decision, "dynamic_keep_out_count", 0)
+        if isinstance(dynamic_keep_outs, bool) or not isinstance(dynamic_keep_outs, int) or dynamic_keep_outs < 0:
+            raise ReceiptError(f"decision declares an invalid dynamic keep-out count: {dynamic_keep_outs!r}")
         step = {
             "step": len(self._ledger.entries),
             "record": "vla_step",
@@ -257,6 +266,10 @@ class RolloutReceipt:
             "now_ts_ns": int(now_ts_ns),
             "obs_to_action_ms": obs_to_action_ms,
             "gate_eval_us": gate_eval_us,
+            # Provenance of the obstacle set this step was gated against: a
+            # caller that moves a hazard must not read as a static manifest.
+            "keep_out_source": keep_out_source,
+            "dynamic_keep_outs": dynamic_keep_outs,
             "margins": dict(getattr(decision, "margins", None) or {}),
         }
         if context:
@@ -367,6 +380,28 @@ class ReceiptVerification:
         return "\n".join(lines)
 
 
+def _keep_out_provenance(entries: Sequence[Mapping[str, Any]]) -> tuple[bool, str]:
+    """Every step must name where its obstacle set came from, consistently.
+
+    The chain already makes an edited value detectable; this check is about the
+    field's own meaning, so a receipt that was rebuilt and re-signed from a
+    tampered entry still fails on a manifest source carrying dynamic shapes.
+    """
+    for index, entry in enumerate(entries):
+        extra = entry.get("extra")
+        if not isinstance(extra, Mapping):
+            return False, f"entry {index} carries no step fields"
+        source = extra.get("keep_out_source")
+        if source not in KEEP_OUT_SOURCES:
+            return False, f"entry {index} names keep-out source {source!r}"
+        count = extra.get("dynamic_keep_outs")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            return False, f"entry {index} dynamic_keep_outs is {count!r}"
+        if source == "manifest" and count != 0:
+            return False, f"entry {index} claims the manifest while carrying {count} dynamic keep-outs"
+    return True, f"{len(entries)} entries"
+
+
 def _expected_summary(entries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     obs_to_action = [entry.get("extra", {}).get("obs_to_action_ms", 0.0) for entry in entries]
     gate_eval = [entry.get("extra", {}).get("gate_eval_us", 0.0) for entry in entries]
@@ -470,6 +505,9 @@ def verify_receipt(
             chain_ok, chain_detail = False, f"entry {index} is not verifiable: {exc}"
             break
     report.add("ledger_chain", chain_ok, chain_detail)
+
+    provenance_ok, provenance_detail = _keep_out_provenance(entries)
+    report.add("keep_out_provenance", provenance_ok, provenance_detail)
 
     expected = _expected_summary(entries)
     report.add(

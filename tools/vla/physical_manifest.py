@@ -33,6 +33,7 @@ POLICY_CLASSES = (
     "watchdog",
     "workspace_keep_in",
     "workspace_keep_out",
+    "dynamic_keep_out",
     "kinematic",
     "wrench",
 )
@@ -48,6 +49,10 @@ DEFAULT_POLICY = {
     "watchdog": "SOFT_STOP",
     "workspace_keep_in": "E_STOP",
     "workspace_keep_out": "E_STOP",
+    # A caller-supplied keep-out the manifest did not authorise is refused at
+    # the same severity as any other obstacle conflict: an unvalidated set is
+    # either a mistake or an attempt to shape the gate's own view of the world.
+    "dynamic_keep_out": "E_STOP",
     "kinematic": "CLAMP",
     "wrench": "SOFT_STOP",
 }
@@ -61,11 +66,16 @@ KNOWN_KEYS = {
     "workspace_aabb",
     "keep_out_aabbs",
     "keep_out_shapes",
+    "max_dynamic_keep_outs",
+    "max_dynamic_radius_m",
     "tool_radius_m",
     "kinematic_limits",
     "policy_on_violation",
     "clamp_strategy",
     "replan_limits",
+    "recovery_planning",
+    "recovery_step_m",
+    "recovery_max_steps",
 }
 
 SHAPE_KINDS = ("circle", "cylinder", "sphere", "capsule", "mesh")
@@ -110,6 +120,14 @@ def _require_positive(name: str, value: Any) -> float:
     return number
 
 
+def _require_count(name: str, value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise VLAManifestError(f"{name} must be an integer count")
+    if value < 0:
+        raise VLAManifestError(f"{name} must not be negative")
+    return value
+
+
 def _parse_aabb(name: str, value: Any) -> tuple[float, float, float, float, float, float]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise VLAManifestError(f"{name} must be a six-element list")
@@ -123,7 +141,19 @@ def _parse_aabb(name: str, value: Any) -> tuple[float, float, float, float, floa
 
 @dataclass(frozen=True)
 class PhysicalVLAConfig:
-    """Validated `physical_vla` bounds. Immutable: a limit cannot drift mid-episode."""
+    """Validated `physical_vla` bounds. Immutable: a limit cannot drift mid-episode.
+
+    The escape hatch: `recovery_planning` adds an escape planner beside a
+    keep-out refusal. Refusing every illegal one-step move from a pose that is
+    already inside a hazard leaves the robot stationary inside it, and the
+    outside world keeps charging it — the refusal is right, but on its own it
+    is a trap. With this on, a refused chunk that names a keep-out still gets
+    the same FORBIDDEN verdict, the same state and the same interlock, plus a
+    `safe_action` of mode `escape` and the poses to leave by. Nothing about the
+    refusal is softened, and the escape poses are subject to the same gate
+    before they are executed. It is off by default because a deployment that
+    cannot act on a `setpoints` payload should not be handed one.
+    """
 
     max_action_age_ms: float
     watchdog_timeout_ms: float
@@ -132,12 +162,20 @@ class PhysicalVLAConfig:
     execution_mode: str
     clamp_strategy: str = "truncate"
     replan_limits: dict[str, float] = field(default_factory=dict)
+    recovery_planning: bool = False
+    recovery_step_m: float = 0.02
+    recovery_max_steps: int = 50
     workspace_aabb: tuple[float, float, float, float, float, float] | None = None
     keep_out_aabbs: tuple[tuple[float, float, float, float, float, float], ...] = ()
     # Normalised primitives: a box circumscribing a disc is up to 27% larger on
     # the diagonal, which refuses poses that are legally clear; a simulator
     # measured 467 such refusals on one task before shapes existed.
     keep_out_shapes: tuple[dict[str, Any], ...] = ()
+    # Per-step keep-outs a caller may supply. Zero count means the feature is
+    # off: a gate that never agreed to accept a set refuses one rather than
+    # quietly ignoring it, because a silently dropped obstacle is a blind spot.
+    max_dynamic_keep_outs: int = 0
+    max_dynamic_radius_m: float | None = None
     tool_radius_m: float = 0.0
     max_pos_delta_m: float | None = None
     max_rot_delta_rad: float | None = None
@@ -153,7 +191,7 @@ class PhysicalVLAConfig:
         return self.policy_on_violation.get(violation_class, "SOFT_STOP")
 
 
-def _parse_shape(name: str, value: Any) -> dict[str, Any]:
+def parse_keep_out_shape(name: str, value: Any) -> dict[str, Any]:
     """Normalise one keep-out primitive. Shapes the gate cannot check are fatal."""
     if not isinstance(value, Mapping):
         raise VLAManifestError(f"{name} must be an object")
@@ -284,6 +322,15 @@ def _parse_section(raw: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(shapes, Sequence) or isinstance(shapes, (str, bytes)):
         raise VLAManifestError("keep_out_shapes must be a list of shape objects")
 
+    recovery_planning = raw.get("recovery_planning", False)
+    if not isinstance(recovery_planning, bool):
+        raise VLAManifestError("recovery_planning must be true or false")
+    recovery_max_steps = raw.get("recovery_max_steps", 50)
+    if isinstance(recovery_max_steps, bool) or not isinstance(recovery_max_steps, int):
+        raise VLAManifestError("recovery_max_steps must be an integer")
+    if recovery_max_steps <= 0:
+        raise VLAManifestError("recovery_max_steps must be greater than zero")
+
     return {
         "max_action_age_ms": _require_positive("max_action_age_ms", raw.get("max_action_age_ms")),
         "watchdog_timeout_ms": _require_positive(
@@ -294,12 +341,23 @@ def _parse_section(raw: Mapping[str, Any]) -> dict[str, Any]:
         "execution_mode": mode,
         "clamp_strategy": clamp_strategy,
         "replan_limits": replan_limits,
+        "recovery_planning": recovery_planning,
+        "recovery_step_m": _require_positive("recovery_step_m", raw.get("recovery_step_m", 0.02)),
+        "recovery_max_steps": recovery_max_steps,
         "workspace_aabb": (
             _parse_aabb("workspace_aabb", raw["workspace_aabb"]) if "workspace_aabb" in raw else None
         ),
         "keep_out_aabbs": tuple(_parse_aabb(f"keep_out_aabbs[{i}]", box) for i, box in enumerate(keep_out)),
         "keep_out_shapes": tuple(
-            _parse_shape(f"keep_out_shapes[{i}]", shape) for i, shape in enumerate(shapes)
+            parse_keep_out_shape(f"keep_out_shapes[{i}]", shape) for i, shape in enumerate(shapes)
+        ),
+        "max_dynamic_keep_outs": _require_count(
+            "max_dynamic_keep_outs", raw.get("max_dynamic_keep_outs", 0)
+        ),
+        "max_dynamic_radius_m": (
+            _require_positive("max_dynamic_radius_m", raw["max_dynamic_radius_m"])
+            if "max_dynamic_radius_m" in raw
+            else None
         ),
         "tool_radius_m": _require_finite("tool_radius_m", raw.get("tool_radius_m", 0.0)),
         "max_pos_delta_m": (
