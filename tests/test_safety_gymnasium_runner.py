@@ -28,6 +28,7 @@ TOOLS = os.path.join(ROOT, "tools")
 sys.path.insert(0, TOOLS)
 sys.path.insert(0, ROOT)
 
+import benchmarks.safety_gymnasium_runner as runner  # noqa: E402
 from benchmarks.safety_gymnasium_runner import (  # noqa: E402
     STALL_STEPS,
     Geometry,
@@ -490,3 +491,35 @@ def test_a_wall_less_arena_is_not_handed_to_the_gate_as_a_keep_in_box():
 
     assert arena_is_enclosed(StubSafetyEnv(), ARENA) is True
     assert arena_is_enclosed(OpenArena(), ARENA) is False
+
+
+def _geometry():
+    return Geometry(
+        arena=(-1.0, -1.0, 1.0, 1.0),
+        hazards=((0.3, -0.2, 0.2), (-0.5, 0.5, 0.15)),
+        robot_radius_m=0.05,
+        motion="omni",
+        step_scale_m=0.1,
+        action_low=(-1.0, -1.0),
+        action_high=(1.0, 1.0),
+        keep_in=True,
+    )
+
+
+def test_the_default_keep_out_is_the_hazard_disc():
+    section = runner.manifest_for(_geometry())["physical_vla"]
+    shapes = section["keep_out_shapes"]
+    assert [shape["shape"] for shape in shapes] == ["circle", "circle"]
+    assert shapes[0]["radius"] == pytest.approx(0.2)
+    assert section["keep_out_aabbs"] == []
+
+
+def test_the_box_keep_out_is_still_available_for_the_comparison():
+    section = runner.manifest_for(_geometry(), "box")["physical_vla"]
+    assert section.get("keep_out_shapes", []) == []
+    assert section["keep_out_aabbs"][0] == pytest.approx([0.1, -0.4, 0.0, 0.5, 0.0, 1.0])
+
+
+def test_an_unknown_keep_out_kind_is_refused():
+    with pytest.raises(ValueError, match="keep-out kind"):
+        runner.manifest_for(_geometry(), "hexagon")

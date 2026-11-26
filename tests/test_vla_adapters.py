@@ -25,6 +25,7 @@ FIXTURES = os.path.abspath(os.path.join(HERE, "..", "data", "vla_fixtures"))
 
 sys.path.insert(0, TOOLS)
 
+from vla.kinematics import UrdfChain
 from vla.adapters import (  # noqa: E402
     ROS2AdapterError,
     VLAGatedEnv,
@@ -664,3 +665,56 @@ def test_adapters_import_clean_in_a_fresh_interpreter():
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert completed.stdout.strip() == "clean"
+
+
+# --- forward kinematics closes the JointTrajectory gap ----------------------
+
+FK_URDF = """<robot name="one_joint">
+  <link name="base"/><link name="tool"/>
+  <joint name="j1" type="revolute">
+    <parent link="base"/><child link="tool"/>
+    <origin xyz="0 0 0.5" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14" upper="3.14"/>
+  </joint>
+</robot>"""
+
+
+def _trajectory_message():
+    return {
+        "joint_names": ["j1"],
+        "points": [
+            {"positions": [0.0], "time_from_start": {"sec": 0, "nanosec": 0}},
+            {"positions": [math.pi / 2], "time_from_start": {"sec": 0, "nanosec": 50_000_000}},
+        ],
+    }
+
+
+def test_a_joint_trajectory_is_gated_through_kinematics_alone():
+    chain = UrdfChain.from_urdf(FK_URDF)
+    chunk = joint_trajectory_to_chunk(_trajectory_message(), chain=chain)
+    assert len(chunk) == 2
+    assert chunk[0]["ee_pos"] == pytest.approx([0.0, 0.0, 0.5])
+    assert chunk[1]["ee_pos"] == pytest.approx([0.0, 0.0, 0.5], abs=1e-12)
+    assert chunk[1]["ee_quat"] == pytest.approx(
+        [math.cos(math.pi / 4), 0.0, 0.0, math.sin(math.pi / 4)], abs=1e-12)
+    assert chunk[1]["duration_ms"] == pytest.approx(50.0)
+
+
+def test_a_trajectory_with_two_path_sources_is_refused():
+    chain = UrdfChain.from_urdf(FK_URDF)
+    with pytest.raises(ROS2AdapterError, match="not both"):
+        joint_trajectory_to_chunk(_trajectory_message(), cartesian_path=[[0, 0, 0], [0, 0, 0]], chain=chain)
+
+
+def test_a_trajectory_with_no_path_source_is_refused():
+    with pytest.raises(ROS2AdapterError, match="cartesian_path or chain"):
+        joint_trajectory_to_chunk(_trajectory_message())
+
+
+def test_a_trajectory_whose_joint_count_disagrees_with_its_names_is_refused():
+    chain = UrdfChain.from_urdf(FK_URDF)
+    message = _trajectory_message()
+    message["joint_names"] = ["j1", "j2"]
+    with pytest.raises(ROS2AdapterError, match="joint names"):
+        joint_trajectory_to_chunk(message, chain=chain)

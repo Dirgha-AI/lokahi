@@ -37,6 +37,13 @@ wasm = ["wasmtime>=15.0"]
 # Benchmark only: the published constraint-cost suite measured by
 # benchmarks/safety_gymnasium_runner.py. Never a runtime dependency.
 safety-gymnasium = ["safety-gymnasium>=1.0"]
+# VLA integration backends. Each one is optional on purpose: the core checks
+# every primitive analytically and needs nothing installed, and a missing extra
+# is a refusal that names the extra, never a silent pass.
+vla-geometry = ["coal"]          # mesh keep-outs; circles, cylinders, spheres and capsules are built in
+vla-kinematics = ["pin"]         # forward kinematics beyond a serial URDF chain
+vla-replan = ["ruckig"]          # time-optimal stop profiles; a jerk-limited analytic stop is built in
+vla = ["coal", "pin", "ruckig"]
 slm = [
   "onnxruntime>=1.17",
   "llama-cpp-python>=0.2",

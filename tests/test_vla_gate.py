@@ -21,6 +21,8 @@ from vla.vla_gate import (
     LokahiVLAGate,
     VLADecisionResult,
     segment_hits_box,
+    segment_hits_circle,
+    segment_hits_cylinder,
 )
 
 BOX = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
@@ -500,3 +502,172 @@ def test_a_clean_start_still_refuses_entering_a_keep_out_box():
     assert result.verdict == "FORBIDDEN"
     assert result.state == E_STOP
     assert any("workspace_keep_out" in reason for reason in result.violated_invariants)
+
+
+# --- shaped keep-outs -------------------------------------------------------
+#
+# A box circumscribing a disc is up to 27% too large on its diagonal. Against a
+# simulator that charges on the disc, that shows up as refused poses the
+# environment would have allowed, so the manifest can name the real shape.
+
+def circle_manifest(**overrides):
+    section = {"keep_out_aabbs": [],
+               "keep_out_shapes": [{"shape": "circle", "centre": [0.5, 0.5], "radius": 0.2}],
+               "tool_radius_m": 0.0}
+    section.update(overrides)
+    return manifest(**section)
+
+
+@pytest.mark.parametrize("shape,expected", [
+    ({"shape": "circle", "centre": [0.5, 0.5], "radius": 0.2}, "circle"),
+    ({"shape": "cylinder", "centre": [0.5, 0.5, 0.0], "radius": 0.2, "height": 1.0}, "cylinder"),
+    ({"shape": "sphere", "centre": [0.5, 0.5, 0.5], "radius": 0.2}, "sphere"),
+    ({"shape": "capsule", "start": [0.2, 0.5, 0.5], "end": [0.8, 0.5, 0.5], "radius": 0.1}, "capsule"),
+])
+def test_shaped_keep_out_loads(shape, expected):
+    config = load_physical_vla(manifest(keep_out_shapes=[shape]))
+    stored = config.keep_out_shapes[0]
+    assert stored["kind"] == expected
+    assert stored["radius"] == pytest.approx(shape["radius"])
+
+
+def test_a_mesh_keep_out_loads_and_is_refused_without_the_extra():
+    mesh = {"shape": "mesh",
+            "vertices": [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+            "triangles": [[0, 1, 2]]}
+    config = load_physical_vla(manifest(keep_out_shapes=[mesh]))
+    stored = config.keep_out_shapes[0]
+    assert stored["kind"] == "mesh"
+    assert stored["triangles"] == ((0, 1, 2),)
+
+
+@pytest.mark.parametrize("shape", [
+    {"shape": "torus", "centre": [0.5, 0.5], "radius": 0.2},
+    {"shape": "circle", "centre": [0.5, 0.5, 0.5], "radius": 0.2},
+    {"shape": "circle", "centre": [0.5], "radius": 0.2},
+    {"shape": "circle", "centre": [0.5, 0.5], "radius": 0.0},
+    {"shape": "cylinder", "centre": [0.5, 0.5, 0.0], "radius": 0.2},
+    {"shape": "capsule", "start": [0.0, 0.0, 0.0], "radius": 0.1},
+    {"shape": "mesh", "vertices": [[0, 0, 0]], "triangles": [[0, 1, 2]]},
+    {"shape": "mesh", "vertices": [[0, 0, 0], [1, 0, 0], [0, 1, 0]], "triangles": [[0, 1, 9]]},
+    {"shape": "circle", "centre": [0.5, 0.5], "radius": 0.2, "colour": "red"},
+])
+def test_a_malformed_shape_is_fatal(shape):
+    with pytest.raises(VLAManifestError):
+        load_physical_vla(manifest(keep_out_shapes=[shape]))
+
+
+def test_circle_sweep_detects_a_crossing_segment():
+    assert segment_hits_circle([0.1, 0.5], [0.9, 0.5], [0.5, 0.5], 0.2)
+
+
+def test_circle_sweep_allows_a_segment_that_stops_short():
+    assert not segment_hits_circle([0.1, 0.5], [0.25, 0.5], [0.5, 0.5], 0.2)
+
+
+def test_circle_sweep_measures_from_the_closest_point_on_the_segment():
+    # The segment's nearest approach is its endpoint, not the infinite line.
+    assert not segment_hits_circle([0.5, 0.9], [0.9, 0.9], [0.5, 0.5], 0.2)
+
+
+def test_a_cylinder_only_blocks_the_slab_it_spans():
+    centre = [0.5, 0.5, 0.0]
+    assert segment_hits_cylinder([0.1, 0.5, 0.5], [0.9, 0.5, 0.5], centre, 0.2, 1.0)
+    assert not segment_hits_cylinder([0.1, 0.5, 2.0], [0.9, 0.5, 2.0], centre, 0.2, 1.0)
+
+
+def test_a_chunk_entering_a_circle_is_refused():
+    result = gate(keep_out_aabbs=[],
+                  keep_out_shapes=[{"shape": "circle", "centre": [0.5, 0.5], "radius": 0.2}])         .evaluate_step(T0, T0, state(0.9, 0.5, 0.5), chunk([0.85, 0.5, 0.5], [0.65, 0.5, 0.5]))
+    assert result.state == E_STOP
+    assert any("workspace_keep_out:shape_0" in v for v in result.violated_invariants)
+
+
+def test_the_disc_corner_a_box_would_refuse_is_armed():
+    """The regression the disc exists for: this pose is inside the bounding
+    square and outside the disc, so the gate must not refuse it."""
+    section = {"keep_out_aabbs": [], "tool_radius_m": 0.0,
+               "keep_out_shapes": [{"shape": "circle", "centre": [0.5, 0.5], "radius": 0.2}]}
+    result = gate(**section).evaluate_step(
+        T0, T0, state(0.5, 0.85, 0.5), chunk([0.5, 0.85, 0.5], [0.55, 0.86, 0.5]))
+    assert result.state == ARMED
+
+
+def test_recovery_out_of_a_circle_is_allowed():
+    section = {"keep_out_aabbs": [], "tool_radius_m": 0.0,
+               "keep_out_shapes": [{"shape": "circle", "centre": [0.5, 0.5], "radius": 0.2}]}
+    result = gate(**section).evaluate_step(
+        T0, T0, state(0.5, 0.55, 0.5), chunk([0.5, 0.55, 0.5], [0.5, 0.5, 0.5], [0.5, 0.3, 0.5]))
+    assert result.state == ARMED
+
+
+def test_a_chunk_that_digs_deeper_into_a_circle_is_a_recovery_violation():
+    section = {"keep_out_aabbs": [], "tool_radius_m": 0.0,
+               "keep_out_shapes": [{"shape": "circle", "centre": [0.5, 0.5], "radius": 0.2}]}
+    result = gate(**section).evaluate_step(
+        T0, T0, state(0.5, 0.68, 0.5), chunk([0.5, 0.68, 0.5], [0.5, 0.5, 0.5]))
+    assert result.state == SOFT_STOP
+    assert any("recovery_required:keep_out" in v for v in result.violated_invariants)
+
+
+# --- clamp strategy: truncate or replan ------------------------------------
+
+def replan_gate(**overrides):
+    section = {"clamp_strategy": "replan",
+               "replan_limits": {"max_acceleration_m_s2": 4.0, "max_jerk_m_s3": 40.0}}
+    section.update(overrides)
+    return gate(**section)
+
+
+def test_replan_without_acceleration_limits_is_fatal():
+    with pytest.raises(VLAManifestError, match="max_acceleration_m_s2"):
+        load_physical_vla(manifest(clamp_strategy="replan"))
+
+
+def test_an_unknown_clamp_strategy_is_fatal():
+    with pytest.raises(VLAManifestError, match="clamp_strategy"):
+        load_physical_vla(manifest(clamp_strategy="hope"))
+
+
+def test_an_unknown_replan_limit_is_fatal():
+    with pytest.raises(VLAManifestError, match="replan_limits"):
+        load_physical_vla(manifest(clamp_strategy="replan",
+                                   replan_limits={"max_acceleration_m_s2": 1.0, "speed": 3.0}))
+
+
+def _kinematic_clamp(gate_object):
+    # Third point exceeds max_pos_delta_m from the second, so two points stay legal.
+    return gate_object.evaluate_step(
+        T0, T0, state(0.5, 0.5, 0.5),
+        chunk([0.55, 0.5, 0.5], [0.6, 0.5, 0.5], [0.95, 0.5, 0.5]))
+
+
+def test_truncate_is_the_default_and_plans_nothing():
+    result = _kinematic_clamp(gate())
+    assert result.state == CLAMPED
+    assert result.replanned_path == []
+    assert result.safe_action["mode"] == "clamped_chunk"
+
+
+def test_replan_returns_a_deceleration_that_ends_at_rest():
+    result = _kinematic_clamp(replan_gate())
+    assert result.state == CLAMPED
+    assert result.safe_action["mode"] == "replanned_stop"
+    assert len(result.replanned_path) > 2
+    assert result.replanned_path[-1]["ee_vel"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-9)
+    assert result.replanned_path[-1]["t_ms"] > result.replanned_path[0]["t_ms"]
+
+
+def test_the_replanned_stop_starts_where_the_legal_prefix_ends():
+    result = _kinematic_clamp(replan_gate())
+    first = result.replanned_path[0]
+    assert first["ee_pos"] == pytest.approx([0.6, 0.5, 0.5])
+    assert first["t_ms"] == 0.0
+
+
+def test_a_replan_that_cannot_finish_falls_back_to_the_prefix_and_says_so():
+    tight = replan_gate(replan_limits={"max_acceleration_m_s2": 0.01, "max_jerk_m_s3": 0.01})
+    result = _kinematic_clamp(tight)
+    assert result.replanned_path == []
+    assert result.safe_action["mode"] == "clamped_chunk"
+    assert "replan_refused" in result.safe_action

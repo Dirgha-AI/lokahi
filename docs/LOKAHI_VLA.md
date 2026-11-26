@@ -164,6 +164,79 @@ recovery_hint={'state': 'E_STOP', 'violated_classes': [...], 'requires_human_res
 
 Every violation is a stable `class:detail` string, so a log filter or a dashboard can key on the class prefix without parsing prose. `recovery_hint` is machine-readable direction for a recovery policy, and by construction it never suggests relaxing a limit.
 
+## Shaped keep-outs
+
+`keep_out_aabbs` judges a box. A box around a disc is up to 27% too large on the
+diagonal, and against an environment that charges on the disc that oversize
+turns into refusals for poses that are legally clear — 467 of them on one
+Safety-Gymnasium task before shapes existed. `keep_out_shapes` names the
+primitive instead, and every one of them is checked with arithmetic, never with
+an optional package:
+
+| Kind | Fields | Sweep |
+|---|---|---|
+| `circle` | `centre` (x, y), `radius` | 2D segment-to-point distance |
+| `cylinder` | `centre` (x, y, z-base), `radius`, `height` | plane slab plus the 2D test |
+| `sphere` | `centre` (x, y, z), `radius` | 3D segment-to-point distance |
+| `capsule` | `start`, `end` (x, y, z), `radius` | 3D segment-to-segment distance |
+| `mesh` | `vertices`, `triangles` | COAL, `pip install "lokahi[vla-geometry]"` |
+
+```json
+"keep_out_shapes": [
+  {"shape": "circle", "centre": [1.2, -0.4], "radius": 0.25},
+  {"shape": "capsule", "start": [0.0, 0.0, 0.3], "end": [0.0, 0.6, 0.3], "radius": 0.08}
+]
+```
+
+`tool_radius_m` grows every shape, exactly as it grows a box, so one number still
+describes the tool. A mesh in a manifest on a build without COAL is a hard error
+naming the extra: the gate never quietly downgrades a check it cannot run.
+
+## Clamp strategy
+
+`clamp_strategy` decides what a clamp hands back.
+
+- `truncate` (default) returns the legal prefix of the chunk. The arm keeps
+  whatever velocity it already had, and the controller is left to deal with it.
+- `replan` returns the same prefix plus `replanned_path`: a jerk-limited
+  deceleration from the last legal pose to rest, sampled at `control_period_ms`,
+  with `replan_limits.max_acceleration_m_s2` and `.max_jerk_m_s3` from the
+  manifest. `safe_action.mode` becomes `replanned_stop` and carries the profile.
+
+The profile ends with zero velocity, so the setpoint stream has somewhere to go.
+A stop that cannot be produced within five seconds is not invented: the result
+falls back to the prefix and records `safe_action.replan_refused` with the
+reason. Ruckig (`pip install "lokahi[vla-replan]"`) replaces the analytic profile
+with a time-optimal one; the analytic profile is what runs with nothing
+installed.
+
+The re-planned path is data, not an authorisation. It is gated again on the next
+`evaluate_step` like any other chunk.
+
+## Forward kinematics for a joint trajectory
+
+A ROS 2 `JointTrajectory` carries joint angles and the gate works in Cartesian
+space. `joint_trajectory_to_chunk` takes exactly one source of that path:
+
+- `cartesian_path=` the path the caller already captured from TF or from the
+  policy's Cartesian output, or
+- `chain=` a `vla.kinematics.UrdfChain`, in which case the adapter runs forward
+  kinematics per trajectory point itself.
+
+```python
+from vla.kinematics import load_urdf
+from vla.adapters import joint_trajectory_to_chunk
+
+chain = load_urdf("robot.urdf", tip_link="tool0")
+chunk = joint_trajectory_to_chunk(recorded_message, chain=chain)
+```
+
+The URDF evaluator is plain Python and handles serial chains of revolute,
+continuous, prismatic and fixed joints. It raises on anything else rather than
+guessing, and a message with both sources or neither is refused. Pinocchio
+(`pip install "lokahi[vla-kinematics]"`) is the backend for models beyond a
+serial chain.
+
 ## Recording
 
 `result.to_decision()` returns a `lokahi.Decision` so the existing ledger carries VLA steps unchanged; `result.interlock` becomes `actuator_interlock`. Two facts about that mapping are worth stating plainly:
@@ -180,6 +253,13 @@ These are properties of the code as it stands, verified by running it, not aspir
 - **A `robot_state` without `ee_pos` disables checks 6 and 7 silently.** Geometry and kinematics are skipped when the current position is missing, and a chunk five metres outside the workspace returns `COMPLIANT` / `ARMED` with no violations. The gate trusts the caller to hand it a robot state. Requiring `ee_pos` and refusing without it is the obvious hardening and is not in v1.4.0-draft.
 - **`max_joint_vel_rad_s` and `max_joint_acc_rad_s2` are accepted, validated, stored — and never evaluated.** Velocity and acceleration are not enforced by the gate; only displacement per setpoint, via `max_pos_delta_m`, and only if that is configured. A manifest that sets a velocity ceiling and nothing else gets no velocity checking.
 - **`duration_ms` feeds freshness only.** Displacement is compared to a distance bound, never divided by the setpoint's duration, so a chunk of very short duration can exceed any intended speed while each delta stays under `max_pos_delta_m`.
+- **Keep-outs are static geometry.** Every shape is fixed configuration read at
+  load time; a hazard that moves is not tracked, and Safety-Gymnasium's moving
+  hazards are the measured consequence of that (see `docs/BENCHMARKS.md`).
+- **A mesh keep-out cannot be entered.** Recovery depth for a triangle mesh is
+  not defined by this build, so a chunk that starts inside one is refused rather
+  than allowed to leave. Circles, cylinders, spheres and capsules all support the
+  monotone-recovery rule.
 - **The tool is a sphere of `tool_radius_m`.** An elongated or rotating tool is modelled by one scalar radius around the end-effector point; orientation is not part of the geometry test.
 - **The watchdog detects a late step, not a silent pipeline.** It fires only when `evaluate_step` is called after a gap. If the policy stops calling entirely, the gate is never invoked and reports nothing; that failure is the controller's own watchdog to catch.
 - **`SOFT_STOP` is per-step, not a trip.** See the state table above.

@@ -47,7 +47,7 @@ runtime dependency:
 ```bash
 py -3 -m venv /d/tmp/sg310
 /d/tmp/sg310/Scripts/python.exe -m pip install safety-gymnasium
-/d/tmp/sg310/Scripts/python.exe benchmarks/safety_gymnasium_runner.py --seeds 3
+/d/tmp/sg310/Scripts/python.exe benchmarks/safety_gymnasium_runner.py --seeds 0 1 2
 ```
 
 Traps on this device, all discovered the hard way:
@@ -87,7 +87,7 @@ refused.
 2. In `vla_gate`, implement the swept test for the new shapes: point-to-segment
    distance in the plane for a circle, and the same plus a z-slab test for a
    cylinder. Keep the existing slab test for boxes; do not replace it.
-3. Re-run `--seeds 3`. The acceptance criterion is not "cost went down": it is
+3. Re-run `--seeds 0 1 2` (`--seeds` lists seeds, it does not count them). The acceptance criterion is not "cost went down": it is
    **the false-clamp count falls while the cost reduction survives**. If the
    false clamps fall but the cost rises, the change was wrong.
 

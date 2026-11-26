@@ -54,7 +54,11 @@ difference is caused by the gate. Three seeds per task, 1000-step horizon,
 `safety-gymnasium` 1.0.0 on CPython 3.10.22.
 
 ```bash
-py -3 benchmarks/safety_gymnasium_runner.py --seeds 3
+# seeds are listed, not counted: `--seeds 3` means seed 3 alone.
+py -3 benchmarks/safety_gymnasium_runner.py --seeds 0 1 2
+# the keep-out shape is selectable, for the D-1 comparison:
+py -3 benchmarks/safety_gymnasium_runner.py --seeds 0 1 2 --keep-out circle   # default
+py -3 benchmarks/safety_gymnasium_runner.py --seeds 0 1 2 --keep-out box
 ```
 
 | Task | Arm | Reward / ep | Cost / ep | Charged steps | Intervention | False clamp |

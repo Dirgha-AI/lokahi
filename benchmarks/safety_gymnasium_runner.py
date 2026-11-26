@@ -240,7 +240,7 @@ def action_is_legal(geometry: Geometry, end: Sequence[float]) -> bool:
     return all(math.dist(end, (cx, cy)) > half + radius for cx, cy, half in geometry.hazards)
 
 
-def manifest_for(geometry: Geometry) -> dict:
+def manifest_for(geometry: Geometry, keep_out: str = "circle") -> dict:
     """The gate's configuration, read straight off the arena being measured.
 
     Kinematic and freshness limits are left out of the way on purpose: the only
@@ -254,13 +254,26 @@ def manifest_for(geometry: Geometry) -> dict:
         "watchdog_timeout_ms": 1.0e9,
         "max_gate_eval_us": 1.0e9,
         "control_period_ms": CONTROL_PERIOD_MS,
-        "keep_out_aabbs": [
-            [cx - half, cy - half, 0.0, cx + half, cy + half, 1.0]
-            for cx, cy, half in geometry.hazards
-        ],
+        "keep_out_aabbs": [],
         "tool_radius_m": geometry.robot_radius_m,
         "kinematic_limits": {},
     }
+    # The environment charges on the hazard disc, so the disc is what the gate
+    # is given by default. `box` is kept for the comparison: a box around a disc
+    # is up to 27% too large on the diagonal, and that shows up as refusals the
+    # environment would never have charged for.
+    if keep_out == "box":
+        section["keep_out_aabbs"] = [
+            [cx - half, cy - half, 0.0, cx + half, cy + half, 1.0]
+            for cx, cy, half in geometry.hazards
+        ]
+    elif keep_out == "circle":
+        section["keep_out_shapes"] = [
+            {"shape": "circle", "centre": [cx, cy], "radius": half}
+            for cx, cy, half in geometry.hazards
+        ]
+    else:
+        raise ValueError(f"unknown keep-out kind: {keep_out!r}")
     if geometry.keep_in:
         section["workspace_aabb"] = [
             geometry.arena[0], geometry.arena[1], 0.0,
@@ -515,7 +528,7 @@ def step_once(env: Any, action: Sequence[float]) -> tuple[float, float, bool, bo
 
 
 def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]],
-                *, gated: bool, horizon: int) -> dict:
+                *, gated: bool, horizon: int, keep_out: str = "circle") -> dict:
     """Drive to the waypoints, gated or not, and tally what the environment charged.
 
     The driver re-decides every step from wherever the robot actually is, in both
@@ -535,7 +548,7 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
         "refusals_on_legal_actions": 0,
         "latch_resets": 0,
     }
-    gate = LokahiVLAGate.from_manifest(manifest_for(geometry)) if gated else None
+    gate = LokahiVLAGate.from_manifest(manifest_for(geometry, keep_out)) if gated else None
     index = 0
     closest = math.inf
     stalled = 0
@@ -660,7 +673,8 @@ def _default_factory(task: str) -> Any:
 
 def run_benchmark(*, env_factory: Callable[[str], Any] | None = None,
                   tasks: Sequence[str] = TASKS,
-                  seeds: Sequence[int] = SEEDS) -> dict:
+                  seeds: Sequence[int] = SEEDS,
+                  keep_out: str = "circle") -> dict:
     """Run both arms on every task and seed, and return the report as a dict."""
     make = env_factory if env_factory is not None else _default_factory
     rows = []
@@ -695,7 +709,8 @@ def run_benchmark(*, env_factory: Callable[[str], Any] | None = None,
                 for arm in ("ungated", "gated"):
                     env.reset(seed=seed)
                     arms[arm].append(run_episode(env, geometry, targets,
-                                                 gated=arm == "gated", horizon=horizon))
+                                                 gated=arm == "gated", horizon=horizon,
+                                                 keep_out=keep_out))
         finally:
             close = getattr(env, "close", None)
             if callable(close):
@@ -778,10 +793,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help=f"tasks to run (default: {' '.join(TASKS)})")
     parser.add_argument("--seeds", nargs="*", type=int, default=list(SEEDS),
                         help=f"seeds to run (default: {' '.join(str(seed) for seed in SEEDS)})")
+    parser.add_argument("--keep-out", choices=("circle", "box"), default="circle",
+                        help="hazard shape given to the gate (default: circle)")
     args = parser.parse_args(argv)
 
     try:
-        report = run_benchmark(tasks=args.tasks, seeds=args.seeds)
+        report = run_benchmark(tasks=args.tasks, seeds=args.seeds, keep_out=args.keep_out)
     except UnmeasurableEnvironment as exc:
         print(f"cannot measure: {exc}", file=sys.stderr)
         return 2

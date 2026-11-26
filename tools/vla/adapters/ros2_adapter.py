@@ -16,13 +16,19 @@ Message dicts are the form `rosidl_runtime_py.convert.message_to_ordereddict`
 produces from a live message and `json.dumps` then serialises, so a recorded
 bag can be replayed through these functions with no rclpy in the process.
 
-The one honest gap: a JointTrajectory carries joint angles, and the gate works
-in Cartesian space. Nothing here does forward kinematics — that needs a robot
-model and dependencies this project does not take — so
-`joint_trajectory_to_chunk` takes the Cartesian path the caller captured
-alongside the trajectory (from TF or the policy's own Cartesian output) as an
-argument. A JointTrajectory alone cannot be gated, and pretending otherwise
-would let an unchecked path through.
+A JointTrajectory carries joint angles and the gate works in Cartesian space, so
+something has to close that gap. There are two ways, and
+`joint_trajectory_to_chunk` takes exactly one of them:
+
+* `cartesian_path` — the path the caller already captured, from TF or from the
+  policy's own Cartesian output.
+* `chain` — a `vla.kinematics.UrdfChain`. The adapter then runs forward
+  kinematics on each point's `positions` itself, with no extra dependency: the
+  URDF evaluator in `vla/kinematics.py` is plain Python. `Pinocchio` is the
+  optional accelerator for models beyond a serial chain.
+
+A JointTrajectory with neither is refused, and pretending otherwise would let an
+unchecked path through.
 
 Timestamps are nanosecond integers throughout, which is what the gate takes:
 ROS 2 `builtin_interfaces/Time` is `{sec, nanosec}` and a `Duration` is the
@@ -124,21 +130,61 @@ def joint_state_to_robot_state(
 # control_msgs/JointTrajectory <-> gate chunk
 # ---------------------------------------------------------------------------
 
+def _kinematics_path(message: Mapping[str, Any], points: Sequence[Any],
+                     chain: Any) -> tuple[list[list[float]], list[list[float]]]:
+    """FK for every trajectory point, using the joint names the message carries."""
+    names = _sequence(_field(message, "joint_names"), "JointTrajectory.joint_names")
+    poses: list[list[float]] = []
+    quaternions: list[list[float]] = []
+    for index, point in enumerate(points):
+        if not isinstance(point, Mapping):
+            raise ROS2AdapterError(f"points[{index}] must be an object")
+        positions = _numbers(_field(point, "positions"), f"points[{index}].positions")
+        if len(positions) != len(names):
+            raise ROS2AdapterError(
+                f"points[{index}].positions has {len(positions)} values for {len(names)} joint names"
+            )
+        try:
+            pose = chain.forward(dict(zip(names, positions)))
+        except Exception as exc:
+            raise ROS2AdapterError(f"forward kinematics failed at point {index}: {exc}") from exc
+        poses.append(list(pose.position))
+        quaternions.append(list(pose.quaternion))
+    return poses, quaternions
+
+
 def joint_trajectory_to_chunk(
     message: Mapping[str, Any],
     *,
-    cartesian_path: Sequence[Any],
+    cartesian_path: Sequence[Any] | None = None,
     ee_quat: Sequence[Any] | None = None,
+    chain: Any = None,
 ) -> list[dict[str, Any]]:
     """Recorded JointTrajectory -> gate chunk, one element per trajectory point.
 
     `duration_ms` is the gap between successive `time_from_start` values, which
     is what the gate's freshness sweep needs; the first element's duration is
     its own `time_from_start` measured from the trajectory's stamp.
+
+    Supply either `cartesian_path` or `chain`, never both: a path captured
+    alongside the trajectory and a path computed from it are different sources
+    of truth, and silently preferring one would hide which was gated.
     """
     points = _sequence(_field(message, "points"), "JointTrajectory.points")
     if not points:
         raise ROS2AdapterError("JointTrajectory has no points")
+    if chain is not None and cartesian_path is not None:
+        raise ROS2AdapterError("give either cartesian_path or chain, not both")
+    if chain is not None:
+        poses, derived_quaternions = _kinematics_path(message, points, chain)
+        if ee_quat is not None:
+            raise ROS2AdapterError("ee_quat is derived from chain; do not pass it as well")
+        cartesian_path = poses
+        ee_quat = derived_quaternions
+    if cartesian_path is None:
+        raise ROS2AdapterError(
+            "a JointTrajectory needs cartesian_path or chain; joint angles alone cannot be gated"
+        )
     poses = [_xyz(pose, f"cartesian_path[{index}]") for index, pose in enumerate(cartesian_path)]
     if len(poses) != len(points):
         raise ROS2AdapterError(

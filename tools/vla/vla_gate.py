@@ -28,6 +28,7 @@ from typing import Any, Mapping, Sequence
 
 from lokahi import COMPLIANT, FORBIDDEN
 
+from . import geometry, replanning
 from .physical_manifest import PhysicalVLAConfig, load_physical_vla, load_physical_vla_file
 
 ARMED = "ARMED"
@@ -67,6 +68,7 @@ class VLADecisionResult:
     gate_eval_us: float
     interlock: str = "pass"
     clamped_from_index: int | None = None
+    replanned_path: list[dict[str, Any]] = field(default_factory=list)
 
     def to_decision(self):
         """A `lokahi.Decision` so the existing ledger carries VLA steps unchanged."""
@@ -140,6 +142,27 @@ def segment_hits_box(
         if t_enter > t_exit:
             return False
     return True
+
+
+def _segment_point_distance(start: Sequence[float], end: Sequence[float], centre: Sequence[float]) -> float:
+    """Distance from a 2D segment to a point, in the plane."""
+    ax, ay = start[0], start[1]
+    dx, dy = end[0] - ax, end[1] - ay
+    denominator = dx * dx + dy * dy
+    if denominator < _EPS:
+        return math.hypot(centre[0] - ax, centre[1] - ay)
+    t = ((centre[0] - ax) * dx + (centre[1] - ay) * dy) / denominator
+    t = max(0.0, min(1.0, t))
+    return math.hypot(centre[0] - (ax + t * dx), centre[1] - (ay + t * dy))
+
+
+def segment_hits_circle(start, end, centre, radius) -> bool:
+    return geometry.segment_point_distance_2d(start, end, centre) <= radius
+
+
+def segment_hits_cylinder(start, end, centre, radius, height) -> bool:
+    return geometry.sweep_hits({"kind": "cylinder", "centre": centre, "radius": radius,
+                                "height": height}, start, end)
 
 
 def _outside_distance(point: Sequence[float], box: Sequence[float]) -> float:
@@ -375,6 +398,26 @@ class LokahiVLAGate:
                             ("workspace_keep_out", f"workspace_keep_out:{box_index}:segment_{step}")
                         )
                         break
+            # Hazards with a real shape. A box around a disc refuses legal poses,
+            # which showed up as 467 over-refusals on one benchmark task.
+            for shape_index, shape in enumerate(config.keep_out_shapes):
+                margin = config.tool_radius_m
+                start_depth = geometry.inside_depth(shape, points[0], margin)
+                if start_depth > 0.0:
+                    depths = [geometry.inside_depth(shape, point, margin) for point in points]
+                    if depths[-1] <= start_depth:
+                        margins[f"keep_out_recovery_shape_{shape_index}_m"] = start_depth - depths[-1]
+                        continue
+                    violations.append(
+                        ("recovery", f"recovery_required:keep_out:{shape_index}:depth={start_depth:.4f}m")
+                    )
+                    continue
+                for step in range(len(points) - 1):
+                    if geometry.sweep_hits(shape, points[step], points[step + 1], margin):
+                        violations.append(
+                            ("workspace_keep_out", f"workspace_keep_out:shape_{shape_index}:segment_{step}")
+                        )
+                        break
 
         # 7. kinematics
         clamp_limit = fresh
@@ -515,6 +558,46 @@ class LokahiVLAGate:
                 # a claim the code cannot keep.
                 safe_action["note"] = "hold at last observed pose; no retract path is planned"
 
+        replanned: list[dict[str, Any]] = []
+        if self.config.clamp_strategy == "replan" and chunk:
+            keep = clamped_index if clamped_index is not None else len(chunk)
+            legal = chunk[:keep]
+            velocity = _chunk_velocity(legal)
+            start = None
+            if legal:
+                start = _try_vector(legal[-1], "ee_pos", 3)
+            if start is None:
+                start = _try_vector(robot_state, "ee_pos", 3)
+            if velocity is not None and start is not None:
+                limits = replanning.Limits(
+                    max_acceleration=self.config.replan_limits.get("max_acceleration_m_s2", 1.0),
+                    max_jerk=self.config.replan_limits.get("max_jerk_m_s3", 10.0),
+                    max_velocity=self.config.replan_limits.get("max_velocity_m_s"),
+                )
+                try:
+                    profile = replanning.stop_profile(
+                        start, velocity, limits,
+                        control_period_s=self.config.control_period_ms / 1000.0,
+                    )
+                except replanning.ReplanError as exc:
+                    # A profile that cannot be produced is not a reason to hand
+                    # back a chunk. Fall back to the prefix and say why.
+                    if safe_action is not None:
+                        safe_action["replan_refused"] = str(exc)
+                else:
+                    replanned = [
+                        {"t_ms": round(waypoint.time_s * 1000.0, 3),
+                         "ee_pos": list(waypoint.position),
+                         "ee_vel": list(waypoint.velocity)}
+                        for waypoint in profile
+                    ]
+                    safe_action = {
+                        "mode": "replanned_stop",
+                        "actions": legal,
+                        "stop_profile": replanned,
+                        "note": "deceleration from the last legal pose; gated again before execution",
+                    }
+
         elapsed_us = (time.perf_counter_ns() - started_ns) / 1000.0
         reasons = [reason for _, reason in violations]
         if elapsed_us > self.config.max_gate_eval_us:
@@ -543,12 +626,28 @@ class LokahiVLAGate:
             gate_eval_us=elapsed_us,
             interlock=STATE_INTERLOCK.get(state, "safe_mechanical_hold"),
             clamped_from_index=clamped_index,
+            replanned_path=replanned,
         )
 
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+def _chunk_velocity(chunk: Sequence[Mapping[str, Any]]) -> list[float] | None:
+    """EE velocity over the last interval of a chunk, in m/s, or None if unknown."""
+    if len(chunk) < 2:
+        return None
+    previous = _try_vector(chunk[-2], "ee_pos", 3)
+    latest = _try_vector(chunk[-1], "ee_pos", 3)
+    duration_ms = chunk[-1].get("duration_ms") or chunk[-2].get("duration_ms")
+    if previous is None or latest is None or not duration_ms:
+        return None
+    seconds = float(duration_ms) / 1000.0
+    if seconds <= 0.0:
+        return None
+    return [(latest[axis] - previous[axis]) / seconds for axis in range(3)]
+
 
 def _try_vector(source: Mapping[str, Any], key: str, length: int | None) -> list[float] | None:
     if not isinstance(source, Mapping) or key not in source or source[key] is None:

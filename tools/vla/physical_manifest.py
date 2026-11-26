@@ -17,6 +17,11 @@ from typing import Any, Callable, Mapping, Sequence
 SECTION = "physical_vla"
 
 EXECUTION_MODES = ("sync", "lazy_async", "continuous_async")
+# truncate: hand back the legal prefix of the chunk. replan: hand back that
+# prefix plus a jerk-limited stop profile, so the arm decelerates instead of
+# dropping the remainder on the floor.
+CLAMP_STRATEGIES = ("truncate", "replan")
+KNOWN_REPLAN_KEYS = {"max_acceleration_m_s2", "max_jerk_m_s3", "max_velocity_m_s"}
 
 # Violation classes a policy may name, and the actions it may map them to.
 POLICY_ACTIONS = ("CLAMP", "SOFT_STOP", "E_STOP")
@@ -55,10 +60,15 @@ KNOWN_KEYS = {
     "execution_mode",
     "workspace_aabb",
     "keep_out_aabbs",
+    "keep_out_shapes",
     "tool_radius_m",
     "kinematic_limits",
     "policy_on_violation",
+    "clamp_strategy",
+    "replan_limits",
 }
+
+SHAPE_KINDS = ("circle", "cylinder", "sphere", "capsule", "mesh")
 
 KNOWN_KINEMATIC_KEYS = {
     "max_pos_delta_m",
@@ -120,8 +130,14 @@ class PhysicalVLAConfig:
     max_gate_eval_us: float
     control_period_ms: float
     execution_mode: str
+    clamp_strategy: str = "truncate"
+    replan_limits: dict[str, float] = field(default_factory=dict)
     workspace_aabb: tuple[float, float, float, float, float, float] | None = None
     keep_out_aabbs: tuple[tuple[float, float, float, float, float, float], ...] = ()
+    # Normalised primitives: a box circumscribing a disc is up to 27% larger on
+    # the diagonal, which refuses poses that are legally clear; a simulator
+    # measured 467 such refusals on one task before shapes existed.
+    keep_out_shapes: tuple[dict[str, Any], ...] = ()
     tool_radius_m: float = 0.0
     max_pos_delta_m: float | None = None
     max_rot_delta_rad: float | None = None
@@ -135,6 +151,68 @@ class PhysicalVLAConfig:
 
     def policy_for(self, violation_class: str) -> str:
         return self.policy_on_violation.get(violation_class, "SOFT_STOP")
+
+
+def _parse_shape(name: str, value: Any) -> dict[str, Any]:
+    """Normalise one keep-out primitive. Shapes the gate cannot check are fatal."""
+    if not isinstance(value, Mapping):
+        raise VLAManifestError(f"{name} must be an object")
+    kind = value.get("kind", value.get("shape"))
+    if kind not in SHAPE_KINDS:
+        raise VLAManifestError(f"{name}.shape must be one of {SHAPE_KINDS}")
+    allowed = {"shape", "kind", "centre", "start", "end", "radius", "height",
+               "vertices", "triangles"}
+    unknown = set(value) - allowed
+    if unknown:
+        raise VLAManifestError(f"{name} has unknown keys: {sorted(unknown)}")
+    shape: dict[str, Any] = {"kind": kind}
+
+    def point(key: str, size: int) -> tuple[float, ...]:
+        raw_point = value.get(key)
+        if not isinstance(raw_point, Sequence) or isinstance(raw_point, (str, bytes)):
+            raise VLAManifestError(f"{name}.{key} must be a list of {size} numbers")
+        if len(raw_point) != size:
+            raise VLAManifestError(f"{name}.{key} must have {size} elements")
+        return tuple(_require_finite(f"{name}.{key}[{i}]", v) for i, v in enumerate(raw_point))
+
+    if kind == "mesh":
+        vertices = value.get("vertices")
+        triangles = value.get("triangles")
+        if not isinstance(vertices, Sequence) or len(vertices) < 3:
+            raise VLAManifestError(f"{name} is a mesh and needs at least three vertices")
+        if not isinstance(triangles, Sequence) or not triangles:
+            raise VLAManifestError(f"{name} is a mesh and needs triangles")
+        parsed_vertices = []
+        for i, vertex in enumerate(vertices):
+            if not isinstance(vertex, Sequence) or len(vertex) != 3:
+                raise VLAManifestError(f"{name}.vertices[{i}] must be three numbers")
+            parsed_vertices.append(
+                tuple(_require_finite(f"{name}.vertices[{i}][{axis}]", value_of)
+                      for axis, value_of in enumerate(vertex))
+            )
+        parsed_triangles = []
+        for i, triangle in enumerate(triangles):
+            if not isinstance(triangle, Sequence) or len(triangle) != 3:
+                raise VLAManifestError(f"{name}.triangles[{i}] must have three indices")
+            indices = tuple(int(float(index)) for index in triangle)
+            if any(index < 0 or index >= len(parsed_vertices) for index in indices):
+                raise VLAManifestError(f"{name}.triangles[{i}] indexes a vertex that does not exist")
+            parsed_triangles.append(indices)
+        shape["vertices"] = tuple(parsed_vertices)
+        shape["triangles"] = tuple(parsed_triangles)
+        return shape
+
+    shape["radius"] = _require_positive(f"{name}.radius", value.get("radius"))
+    if kind == "capsule":
+        shape["start"] = point("start", 3)
+        shape["end"] = point("end", 3)
+        return shape
+    shape["centre"] = point("centre", 2 if kind == "circle" else 3)
+    if kind == "cylinder":
+        if "height" not in value:
+            raise VLAManifestError(f"{name} is a cylinder and needs a height")
+        shape["height"] = _require_positive(f"{name}.height", value.get("height"))
+    return shape
 
 
 def _parse_section(raw: Mapping[str, Any]) -> dict[str, Any]:
@@ -180,9 +258,31 @@ def _parse_section(raw: Mapping[str, Any]) -> dict[str, Any]:
     if mode not in EXECUTION_MODES:
         raise VLAManifestError(f"execution_mode must be one of {EXECUTION_MODES}")
 
+    clamp_strategy = raw.get("clamp_strategy", "truncate")
+    if clamp_strategy not in CLAMP_STRATEGIES:
+        raise VLAManifestError(f"clamp_strategy must be one of {CLAMP_STRATEGIES}")
+
+    replan = raw.get("replan_limits") or {}
+    if not isinstance(replan, Mapping):
+        raise VLAManifestError("replan_limits must be an object")
+    unknown_replan = set(replan) - KNOWN_REPLAN_KEYS
+    if unknown_replan:
+        raise VLAManifestError(f"unknown replan_limits keys: {sorted(unknown_replan)}")
+    replan_limits = {
+        key: _require_positive(f"replan_limits.{key}", value)
+        for key, value in replan.items()
+    }
+    if clamp_strategy == "replan" and "max_acceleration_m_s2" not in replan_limits:
+        raise VLAManifestError(
+            "clamp_strategy replan needs replan_limits.max_acceleration_m_s2"
+        )
+
     keep_out = raw.get("keep_out_aabbs", []) or []
     if not isinstance(keep_out, Sequence) or isinstance(keep_out, (str, bytes)):
         raise VLAManifestError("keep_out_aabbs must be a list of six-element boxes")
+    shapes = raw.get("keep_out_shapes", []) or []
+    if not isinstance(shapes, Sequence) or isinstance(shapes, (str, bytes)):
+        raise VLAManifestError("keep_out_shapes must be a list of shape objects")
 
     return {
         "max_action_age_ms": _require_positive("max_action_age_ms", raw.get("max_action_age_ms")),
@@ -192,10 +292,15 @@ def _parse_section(raw: Mapping[str, Any]) -> dict[str, Any]:
         "max_gate_eval_us": _require_positive("max_gate_eval_us", raw.get("max_gate_eval_us", 5000)),
         "control_period_ms": _require_positive("control_period_ms", raw.get("control_period_ms", 20)),
         "execution_mode": mode,
+        "clamp_strategy": clamp_strategy,
+        "replan_limits": replan_limits,
         "workspace_aabb": (
             _parse_aabb("workspace_aabb", raw["workspace_aabb"]) if "workspace_aabb" in raw else None
         ),
         "keep_out_aabbs": tuple(_parse_aabb(f"keep_out_aabbs[{i}]", box) for i, box in enumerate(keep_out)),
+        "keep_out_shapes": tuple(
+            _parse_shape(f"keep_out_shapes[{i}]", shape) for i, shape in enumerate(shapes)
+        ),
         "tool_radius_m": _require_finite("tool_radius_m", raw.get("tool_radius_m", 0.0)),
         "max_pos_delta_m": (
             _require_positive("max_pos_delta_m", limits["max_pos_delta_m"])
