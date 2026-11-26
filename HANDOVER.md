@@ -136,9 +136,40 @@ a hold. Requirements, in order:
    drives itself out of an emergency stop is a hazard of its own.
 5. Deterministic, so the same refusal produces the same recovery.
 
+**Measured status of the fix: closed.** Escape planning lives in
+`tools/vla/recovery.py`, is deterministic, and searches axes, the radial away from
+the deepest keep-out, its two tangents and a 16-direction in-plane fan, admitting
+a step only when it keeps the swept segment clear and raises the minimum
+clearance. With discs plus `--recovery`: SafetyCar 92.7 → **43.3** per episode at
+reward 1.353, SafetyPoint 38.3 → 71.3, SafetyButton 19.3 → 40.3. Refusals fall on
+SafetyPoint from 970 to 156 because a refusal that carries a way out stops
+repeating. Two tasks still cost more gated than ungated; that is measured, not
+explained away. See `docs/BENCHMARKS.md` arm C.
+
 **Why this is the right fix and not a benchmark trick.** The measurement does not
 ask for a looser gate; it asks for a gate that can act. A refusal with no
 alternative is a policy statement the gate is not entitled to make.
+
+### D-1c · The escape planner is too strict to work in clutter (closed)
+
+**Symptom, as first reported.** With `recovery_planning` on, the disc benchmark was
+unchanged to three decimals and 0 escape paths were produced from 50
+`recovery_required` refusals. **That report measured a harness bug, not the
+planner:** `run_episode` called `manifest_for(geometry, keep_out)` and dropped the
+`recovery` argument, so `recovery_planning` was never set. After the wiring fix
+the same task planned 146 escapes from 156 refusals and cost fell 83.7 → 71.3.
+
+**Cause.** `recovery.escape_path` requires minimum clearance to *every* keep-out
+to strictly increase at each step, searched over six fixed axis directions. Eight
+packed hazard discs make every 2 cm candidate reduce clearance to a neighbour, so
+the plan is empty exactly where it is needed.
+
+**Fix.** Search radially away from the deepest hazard plus laterally along its
+tangent, accept candidates with *non-decreasing* clearance to all other keep-outs,
+verify each step with the same swept test the gate uses, and prefer the candidate
+that maximises the minimum clearance. The strict-increase rule becomes the tie
+breaker, not the admission test. Consumer contract stays the same: the path is an
+offer beside the refusal and is gated again before execution.
 
 ### D-2 · Moving hazards are not modelled at all
 

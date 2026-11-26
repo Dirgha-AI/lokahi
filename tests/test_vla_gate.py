@@ -30,6 +30,28 @@ OBSTACLE = [0.4, 0.4, 0.0, 0.6, 0.6, 1.0]
 T0 = 1_000_000_000_000
 MS = 1_000_000
 
+# The fixture's manifests declare `physical_envelope` force and torque ceilings,
+# and the gate refuses a configured ceiling it has no measurement for
+# (`wrench:wrench_unverifiable`). A deployment in which those ceilings exist is a
+# deployment whose adapter measures contact, so the fixture measures it once,
+# here, rather than in 47 call sites. Tests that are about the wrench pass their
+# own and are unaffected.
+MEASURED_WRENCH = {"force_n": 1.0, "torque_nm": 1.0}
+
+
+def verified(_document):
+    """These manifests are the fixture's own, so the verified path is the one under test."""
+    return True
+
+
+class _MeasuredGate(LokahiVLAGate):
+    def evaluate_step(self, obs_ts_ns, now_ts_ns, robot_state, action_chunk,
+                      wrench=MEASURED_WRENCH, **kwargs):
+        return super().evaluate_step(
+            obs_ts_ns, now_ts_ns, robot_state, action_chunk, wrench=wrench, **kwargs
+        )
+
+
 
 def manifest(**overrides):
     section = {
@@ -53,7 +75,7 @@ def manifest(**overrides):
 
 
 def gate(**overrides):
-    return LokahiVLAGate.from_manifest(manifest(**overrides))
+    return _MeasuredGate.from_manifest(manifest(**overrides), verifier=verified)
 
 
 def state(x=0.5, y=0.5, z=0.5):
@@ -288,7 +310,7 @@ def test_empty_chunk_is_refused():
 
 
 def test_force_overload_soft_stops_and_reports_a_margin():
-    result = gate().evaluate_step(T0, T0, state(), chunk([0.55, 0.5, 0.5]), wrench={"force_n": 12.5})
+    result = gate().evaluate_step(T0, T0, state(), chunk([0.55, 0.5, 0.5]), wrench={"force_n": 12.5, "torque_nm": 1.0})
     assert result.verdict == "FORBIDDEN"
     assert result.state == SOFT_STOP
     assert result.margins["force_margin_n"] == pytest.approx(-2.5)
@@ -297,13 +319,15 @@ def test_force_overload_soft_stops_and_reports_a_margin():
 
 def test_three_axis_wrench_uses_the_l2_norm():
     result = gate().evaluate_step(
-        T0, T0, state(), chunk([0.55, 0.5, 0.5]), wrench={"force_n": [8.0, 8.0, 0.0]}
+        T0, T0, state(), chunk([0.55, 0.5, 0.5]),
+        wrench={"force_n": [8.0, 8.0, 0.0], "torque_nm": 1.0},
     )
     assert any("wrench:force" in reason for reason in result.violated_invariants)
 
 
 def test_force_within_envelope_passes():
-    result = gate().evaluate_step(T0, T0, state(), chunk([0.55, 0.5, 0.5]), wrench={"force_n": 9.0})
+    result = gate().evaluate_step(
+        T0, T0, state(), chunk([0.55, 0.5, 0.5]), wrench={"force_n": 9.0, "torque_nm": 40.0})
     assert result.verdict == "COMPLIANT"
 
 
@@ -613,8 +637,16 @@ def test_a_chunk_that_digs_deeper_into_a_circle_is_a_recovery_violation():
 # --- clamp strategy: truncate or replan ------------------------------------
 
 def replan_gate(**overrides):
+    # A wider workspace than BOX on purpose. The legal prefix in
+    # `_kinematic_clamp` arrives at 2.5 m/s, and at 4 m/s2 the deceleration
+    # needs ~0.78 m: from x = 0.6 it ends at x = 1.506, which a 1 m box cannot
+    # contain. That case is now a refusal and is pinned in
+    # `tests/test_vla_fail_closed.py::test_a_stop_profile_that_leaves_the_workspace_is_dropped`;
+    # these tests are about the shape of an accepted profile, so they get a box
+    # that can hold it.
     section = {"clamp_strategy": "replan",
-               "replan_limits": {"max_acceleration_m_s2": 4.0, "max_jerk_m_s3": 40.0}}
+               "replan_limits": {"max_acceleration_m_s2": 4.0, "max_jerk_m_s3": 40.0},
+               "workspace_aabb": [0.0, 0.0, 0.0, 2.0, 1.0, 1.0]}
     section.update(overrides)
     return gate(**section)
 

@@ -49,8 +49,32 @@ def manifest(**overrides):
     }
 
 
+MEASURED_WRENCH = {"force_n": 1.0, "torque_nm": 1.0}
+
+
+def verified(_document):
+    """This file's manifests are its own fixture, so the verified path is the one under test."""
+    return True
+
+
+class _MeasuredGate(LokahiVLAGate):
+    """The fixture's adapter measures the wrench the manifest's ceilings apply to.
+
+    The gate refuses a configured force or torque ceiling it has no measurement
+    for (`wrench:wrench_unverifiable`), so every step in a deployment with those
+    ceilings carries a wrench. Saying that once here keeps each test about the
+    check it names; tests that are about the wrench pass their own.
+    """
+
+    def evaluate_step(self, obs_ts_ns, now_ts_ns, robot_state, action_chunk,
+                      wrench=MEASURED_WRENCH, **kwargs):
+        return super().evaluate_step(
+            obs_ts_ns, now_ts_ns, robot_state, action_chunk, wrench=wrench, **kwargs
+        )
+
+
 def gate(**overrides):
-    return LokahiVLAGate.from_manifest(manifest(**overrides))
+    return _MeasuredGate.from_manifest(manifest(**overrides), verifier=verified)
 
 
 def state(x=0.5, y=0.5, z=0.5):

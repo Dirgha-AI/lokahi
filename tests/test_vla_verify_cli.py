@@ -54,15 +54,25 @@ def chunk(*xs):
     ]
 
 
+def verified(_document):
+    """This file's manifest is its own fixture: the verified path is the one under test."""
+    return True
+
+
+MEASURED_WRENCH = {"force_n": 0.0, "torque_nm": 0.0}
+
+
 def build_document(signer):
-    gate = LokahiVLAGate.from_manifest(manifest())
+    gate = LokahiVLAGate.from_manifest(manifest(), verifier=verified)
     receipt = RolloutReceipt("policy:cli", digest(CANON_JCS, manifest()), "sync", signer=signer)
     now = T0
     plan = ((0.10, (0.12,)), (0.14, (0.16,)), (0.14, (0.20, 0.60)))
     for robot_x, points in plan:
         now += 20 * MS
         obs = now - 5 * MS
-        decision = gate.evaluate_step(obs, now, state(robot_x), chunk(*points))
+        decision = gate.evaluate_step(
+            obs, now, state(robot_x), chunk(*points), wrench=MEASURED_WRENCH
+        )
         receipt.record_step(decision, obs_ts_ns=obs, now_ts_ns=now)
     return receipt.to_dict()
 

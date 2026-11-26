@@ -53,6 +53,12 @@ BENIGN_TICKS = 300
 ADVERSARIAL_TICKS = 60
 INJECT_TICK = 20
 
+# This bench models a free-space arm, so the contact wrench the envelope
+# ceilings apply to is zero. A case that injects an overload supplies its own;
+# the gate refuses a configured ceiling with no measurement at all
+# (`wrench:wrench_unverifiable`), which is a different statement from "no force".
+NO_CONTACT_WRENCH = {"force_n": 0.0, "torque_nm": 0.0}
+
 MANIFEST = {
     "node": "robot:bench",
     "physical_envelope": {"max_contact_force_n": MAX_FORCE_N, "max_joint_torque_nm": MAX_TORQUE_NM},
@@ -299,7 +305,11 @@ def run_episode(mode, latency_ms, gated, case=None, ticks=None):
     if ticks is None:
         ticks = BENIGN_TICKS if case is None else ADVERSARIAL_TICKS
     latency_ns = int(latency_ms * 1e6)
-    gate = LokahiVLAGate.from_manifest(MANIFEST) if gated else None
+    # A benchmark manifest is a bench fixture: there is no signing key in this
+    # process, so the opt-out is explicit rather than implied.
+    gate = (
+        LokahiVLAGate.from_manifest(MANIFEST, allow_unverified_manifest=True) if gated else None
+    )
 
     s = 0.0
     pose = ROUTE_OBJ.point(s)
@@ -358,7 +368,7 @@ def run_episode(mode, latency_ms, gated, case=None, ticks=None):
         remaining = active["elements"][active["index"]:]
         # remaining[0] is where the plan clock is right now: no per-index term.
         age_ms = (now - active["obs_ts_ns"]) / 1e6
-        wrench = active["wrench"]
+        wrench = active["wrench"] or NO_CONTACT_WRENCH
 
         if gated:
             result = gate.evaluate_step(active["obs_ts_ns"], now, _robot_state(pose),

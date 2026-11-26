@@ -87,8 +87,37 @@ def manifest(**overrides):
     }
 
 
+MEASURED_WRENCH = {"force_n": 1.0, "torque_nm": 1.0}
+
+
+def verified(_document):
+    """This file's manifests are its own fixture, so the verified path is the one under test."""
+    return True
+
+
+def _measured_wrench(_observation):
+    """The wrapped env's observer reads a contact wrench; the manifest's ceilings need one."""
+    return dict(MEASURED_WRENCH)
+
+
+class _MeasuredGate(LokahiVLAGate):
+    """The fixture's adapter measures the wrench the manifest's ceilings apply to.
+
+    The gate refuses a configured force or torque ceiling it has no measurement
+    for (`wrench:wrench_unverifiable`), so every step in a deployment with those
+    ceilings carries a wrench. Saying that once here keeps each test about the
+    check it names; tests that are about the wrench pass their own.
+    """
+
+    def evaluate_step(self, obs_ts_ns, now_ts_ns, robot_state, action_chunk,
+                      wrench=MEASURED_WRENCH, **kwargs):
+        return super().evaluate_step(
+            obs_ts_ns, now_ts_ns, robot_state, action_chunk, wrench=wrench, **kwargs
+        )
+
+
 def gate(**overrides):
-    return LokahiVLAGate.from_manifest(manifest(**overrides))
+    return _MeasuredGate.from_manifest(manifest(**overrides), verifier=verified)
 
 
 def action(x=0.22, y=0.2, z=0.2):
@@ -164,7 +193,7 @@ CARTESIAN = [
 def test_gym_allowed_step_returns_five_tuple_and_verdict():
     env = FakeEnv()
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(), clock=clock, wrench_from_obs=_measured_wrench)
     observation, info = wrapped.reset()
     assert info == {"reset": True}
     clock.advance(20)
@@ -185,7 +214,7 @@ def test_gym_allowed_step_returns_five_tuple_and_verdict():
 def test_gym_four_element_env_is_normalised():
     env = FakeEnv(step_values=4)
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(), clock=clock, wrench_from_obs=_measured_wrench)
     wrapped.reset()
     clock.advance(20)
 
@@ -199,7 +228,7 @@ def test_gym_four_element_env_terminated_maps_done():
     env = FakeEnv(step_values=4)
     env.step = lambda action: ({"ee_pos": [0.22, 0.2, 0.2], "ee_quat": list(QUAT)}, 0.0, True, {})
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(), clock=clock, wrench_from_obs=_measured_wrench)
     wrapped.reset()
     clock.advance(20)
 
@@ -211,7 +240,8 @@ def test_gym_four_element_env_terminated_maps_done():
 def test_gym_refused_step_never_reaches_the_env():
     env = FakeEnv(observation={"ee_pos": [0.2, 0.5, 0.5], "ee_quat": list(QUAT)})
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(keep_out_aabbs=[OBSTACLE], kinematic_limits={}), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(keep_out_aabbs=[OBSTACLE], kinematic_limits={}), clock=clock,
+                wrench_from_obs=_measured_wrench)
     previous, _ = wrapped.reset()
     clock.advance(20)
 
@@ -230,7 +260,8 @@ def test_gym_refused_step_never_reaches_the_env():
 def test_gym_estop_latch_survives_until_a_human_resets():
     env = FakeEnv(observation={"ee_pos": [0.2, 0.5, 0.5], "ee_quat": list(QUAT)})
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(keep_out_aabbs=[OBSTACLE], kinematic_limits={}), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(keep_out_aabbs=[OBSTACLE], kinematic_limits={}), clock=clock,
+                wrench_from_obs=_measured_wrench)
     wrapped.reset()
 
     clock.advance(20)
@@ -258,11 +289,13 @@ def test_gym_clamped_chunk_executes_only_the_prefix():
         env,
         gate(policy_on_violation={"stale_action": "CLAMP"}),
         clock=clock,
+        wrench_from_obs=_measured_wrench,
     )
     wrapped.reset()
     clock.advance(125)
 
-    chunk = [{"ee_pos": [0.2 + 0.01 * index, 0.2, 0.2], "ee_quat": list(QUAT)} for index in range(6)]
+    chunk = [{"ee_pos": [0.2 + 0.01 * index, 0.2, 0.2], "ee_quat": list(QUAT), "duration_ms": 20.0}
+             for index in range(6)]
     _, _, _, _, info = wrapped.step(chunk)
 
     decision = info["lokahi_vla"]
@@ -277,7 +310,7 @@ def test_gym_clamped_chunk_executes_only_the_prefix():
 def test_gym_translation_failure_fails_closed():
     env = FakeEnv()
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(), clock=clock, wrench_from_obs=_measured_wrench)
     wrapped.reset()
     clock.advance(20)
 
@@ -292,7 +325,7 @@ def test_gym_translation_failure_fails_closed():
 def test_gym_observation_without_robot_state_fails_closed():
     env = FakeEnv(observation={"joint_pos": [0.0] * 6})
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(), clock=clock, wrench_from_obs=_measured_wrench)
     wrapped.reset()
     clock.advance(20)
 
@@ -310,13 +343,14 @@ def test_gym_custom_translators_are_used():
 
     def to_chunk(policy_output):
         calls["chunk"] = policy_output
-        return [{"ee_pos": policy_output, "ee_quat": list(QUAT)}]
+        return [{"ee_pos": policy_output, "ee_quat": list(QUAT), "duration_ms": 20.0}]
 
     def from_chunk(chunk, result):
         calls["from"] = result.verdict
         return [element["ee_pos"] for element in chunk]
 
-    wrapped = VLAGatedEnv(env, gate(), clock=clock, to_chunk=to_chunk, from_chunk=from_chunk)
+    wrapped = VLAGatedEnv(env, gate(), clock=clock, to_chunk=to_chunk, from_chunk=from_chunk,
+                           wrench_from_obs=_measured_wrench)
     wrapped.reset()
     clock.advance(20)
     wrapped.step([0.22, 0.2, 0.2])
@@ -326,14 +360,14 @@ def test_gym_custom_translators_are_used():
 
 
 def test_gym_step_before_reset_raises():
-    wrapped = VLAGatedEnv(FakeEnv(), gate(), clock=Clock())
+    wrapped = VLAGatedEnv(FakeEnv(), gate(), clock=Clock(), wrench_from_obs=_measured_wrench)
     with pytest.raises(RuntimeError, match="before reset"):
         wrapped.step(action())
 
 
 def test_gym_delegates_unknown_attributes():
     env = FakeEnv()
-    wrapped = VLAGatedEnv(env, gate(), clock=Clock())
+    wrapped = VLAGatedEnv(env, gate(), clock=Clock(), wrench_from_obs=_measured_wrench)
     assert wrapped.action_space == "fake-space"
     assert wrapped.unwrapped is env
 
@@ -356,6 +390,7 @@ def test_lerobot_allows_the_whole_chunk():
         rows,
         mapping=ADAPTER_MAPPING,
         robot_state=ROBOT,
+        wrench=MEASURED_WRENCH,
         obs_ts_ns=T0,
         now_ts_ns=T0 + 20 * MS,
     )
@@ -373,6 +408,7 @@ def test_lerobot_reads_duck_typed_arrays():
         rows,
         mapping=ADAPTER_MAPPING,
         robot_state=ROBOT,
+        wrench=MEASURED_WRENCH,
         obs_ts_ns=T0,
         now_ts_ns=T0 + 20 * MS,
     )
@@ -389,6 +425,7 @@ def test_lerobot_unwraps_a_single_element_batch():
         batched,
         mapping=ADAPTER_MAPPING,
         robot_state=ROBOT,
+        wrench=MEASURED_WRENCH,
         obs_ts_ns=T0,
         now_ts_ns=T0 + 20 * MS,
     )
@@ -404,6 +441,7 @@ def test_lerobot_clamps_to_the_prefix():
         rows,
         mapping=ADAPTER_MAPPING,
         robot_state=ROBOT,
+        wrench=MEASURED_WRENCH,
         obs_ts_ns=T0,
         now_ts_ns=T0 + 125 * MS,
     )
@@ -420,6 +458,7 @@ def test_lerobot_refuses_a_chunk_through_an_obstacle():
         rows,
         mapping=ADAPTER_MAPPING,
         robot_state={"ee_pos": [0.2, 0.5, 0.5], "ee_quat": list(QUAT)},
+        wrench=MEASURED_WRENCH,
         obs_ts_ns=T0,
         now_ts_ns=T0 + 20 * MS,
     )
@@ -436,6 +475,7 @@ def test_lerobot_refuses_non_finite_values():
         rows,
         mapping=ADAPTER_MAPPING,
         robot_state=ROBOT,
+        wrench=MEASURED_WRENCH,
         obs_ts_ns=T0,
         now_ts_ns=T0 + 20 * MS,
     )
@@ -445,18 +485,26 @@ def test_lerobot_refuses_non_finite_values():
     assert allowed == []
 
 
-def test_lerobot_duration_falls_back_to_the_gate_control_period():
+def test_lerobot_refuses_a_row_without_a_duration():
+    """`duration_ms` no longer falls back to the control period: a missing one is refused.
+
+    Freshness is `(now - obs) + sum of the earlier durations`, so a setpoint that
+    does not say how long it lasts cannot be aged at all, and defaulting it made
+    a stale tail look fresh (audit F1).
+    """
     allowed, result = filter_action_chunk(
         gate(),
         [row(0.2)],
         mapping={"ee_pos": (0, 3)},
         robot_state=ROBOT,
+        wrench=MEASURED_WRENCH,
         obs_ts_ns=T0,
         now_ts_ns=T0 + 20 * MS,
     )
 
-    assert result.allowed is True
-    assert allowed == [row(0.2)]
+    assert result.allowed is False
+    assert any("duration_ms:missing" in reason for reason in result.violated_invariants)
+    assert allowed == []
 
 
 def test_lerobot_requires_robot_state():

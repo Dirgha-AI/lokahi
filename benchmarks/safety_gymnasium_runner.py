@@ -555,9 +555,18 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
         "refusals": 0,
         "refusals_on_legal_actions": 0,
         "refusals_from_inside": 0,
+        "refusals_at_surface": 0,
+        "refusal_classes": {},
+        "escape_plans": 0,
+        "escape_steps": 0,
         "latch_resets": 0,
     }
-    gate = LokahiVLAGate.from_manifest(manifest_for(geometry, keep_out)) if gated else None
+    # Bench manifest, no signing key in this process: the opt-out is explicit.
+    gate = (
+        LokahiVLAGate.from_manifest(manifest_for(geometry, keep_out, recovery),
+                                    allow_unverified_manifest=True)
+        if gated else None
+    )
     index = 0
     closest = math.inf
     stalled = 0
@@ -607,6 +616,10 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
                 robot_state={"ee_pos": [position[0], position[1], PLANE_Z]},
                 action_chunk=[{"ee_pos": [candidate[0], candidate[1], PLANE_Z],
                                "duration_ms": CONTROL_PERIOD_MS}],
+                # The envelope here is the 1e9 sentinel and contact is scored
+                # through the environment's own cost; the gate still needs a
+                # measurement for the ceiling it was handed.
+                wrench={"force_n": 0.0, "torque_nm": 0.0},
             )
             if decision.verdict != VERDICT_COMPLIANT:
                 tally["interventions"] += 1
@@ -617,16 +630,27 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
                 # Was the refusal issued while the robot was already inside a
                 # keep-out? That is the only case an escape plan can help with,
                 # and counting it is what separates the two mechanisms.
-                if any(math.dist(position, (cx, cy)) <= half
-                       for cx, cy, half in geometry.hazards):
+                depth = max((half - math.dist(position, (cx, cy))
+                             for cx, cy, half in geometry.hazards), default=0.0)
+                for reason in decision.violated_invariants:
+                    key = reason.split(":", 1)[0]
+                    tally["refusal_classes"][key] = tally["refusal_classes"].get(key, 0) + 1
+                if depth >= 0.0 and any(math.dist(position, (cx, cy)) <= half
+                                        for cx, cy, half in geometry.hazards):
                     tally["refusals_from_inside"] += 1
+                    if depth <= 1e-9:
+                        tally["refusals_at_surface"] += 1
                 planned = getattr(decision, "escape_path", None) or []
                 escape_target = (planned[0][0], planned[0][1]) if planned else None
+                if escape_target is not None:
+                    tally["escape_plans"] += 1
                 # The gate refused the policy's chunk but planned a pose that
                 # strictly increases clearance. The harness plays the controller,
                 # so it tracks that pose instead of holding: the gate vouches for
                 # the target's clearance property, not for the tracking.
                 executed = list(action) if escape_target is not None else [0.0] * len(action)
+                if escape_target is not None:
+                    tally["escape_steps"] += 1
                 retreating = escape_target is None
             else:
                 retreating = False
@@ -673,6 +697,11 @@ def _aggregate(episodes: Sequence[dict]) -> dict:
         "refusal_rate": refusals / steps if steps else 0.0,
         "refusals_on_legal_actions": sum(episode["refusals_on_legal_actions"] for episode in episodes),
         "refusals_from_inside": sum(episode["refusals_from_inside"] for episode in episodes),
+        "refusals_at_surface": sum(episode["refusals_at_surface"] for episode in episodes),
+        "refusal_classes": {key: sum(episode["refusal_classes"].get(key, 0) for episode in episodes)
+                            for key in {k for episode in episodes for k in episode["refusal_classes"]}},
+        "escape_plans": sum(episode["escape_plans"] for episode in episodes),
+        "escape_steps": sum(episode["escape_steps"] for episode in episodes),
         "latch_resets": sum(episode["latch_resets"] for episode in episodes),
     }
 

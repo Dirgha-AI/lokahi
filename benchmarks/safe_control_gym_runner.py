@@ -437,7 +437,11 @@ def run_episode(env: Any, geometry: Geometry, targets_: Sequence[float], *,
         "refusals_on_legal_actions": 0,
         "latch_resets": 0,
     }
-    gate = LokahiVLAGate.from_manifest(manifest_for(geometry)) if arm == "gated" else None
+    # Bench manifest, no signing key in this process: the opt-out is explicit.
+    gate = (
+        LokahiVLAGate.from_manifest(manifest_for(geometry), allow_unverified_manifest=True)
+        if arm == "gated" else None
+    )
     index = 0
     closest = math.inf
     stalled = 0
@@ -474,6 +478,9 @@ def run_episode(env: Any, geometry: Geometry, targets_: Sequence[float], *,
                 robot_state={"ee_pos": [position, 0.0, PLANE_Z]},
                 action_chunk=[{"ee_pos": [predicted[0], predicted[1], PLANE_Z],
                                "duration_ms": CONTROL_PERIOD_MS}],
+                # 1e9 sentinel ceiling and cost-based contact scoring: see
+                # safety_gymnasium_runner for the same reasoning.
+                wrench={"force_n": 0.0, "torque_nm": 0.0},
             )
             if decision.verdict != VERDICT_COMPLIANT:
                 tally["interventions"] += 1

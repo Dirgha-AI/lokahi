@@ -73,8 +73,37 @@ def manifest(**overrides):
     }
 
 
+MEASURED_WRENCH = {"force_n": 1.0, "torque_nm": 1.0}
+
+
+def verified(_document):
+    """This file's manifests are its own fixture, so the verified path is the one under test."""
+    return True
+
+
+def _measured_wrench(_observation):
+    """The wrapped env's observer reads a contact wrench; the manifest's ceilings need one."""
+    return dict(MEASURED_WRENCH)
+
+
+class _MeasuredGate(LokahiVLAGate):
+    """The fixture's adapter measures the wrench the manifest's ceilings apply to.
+
+    The gate refuses a configured force or torque ceiling it has no measurement
+    for (`wrench:wrench_unverifiable`), so every step in a deployment with those
+    ceilings carries a wrench. Saying that once here keeps each test about the
+    check it names; tests that are about the wrench pass their own.
+    """
+
+    def evaluate_step(self, obs_ts_ns, now_ts_ns, robot_state, action_chunk,
+                      wrench=MEASURED_WRENCH, **kwargs):
+        return super().evaluate_step(
+            obs_ts_ns, now_ts_ns, robot_state, action_chunk, wrench=wrench, **kwargs
+        )
+
+
 def gate(**overrides):
-    return LokahiVLAGate.from_manifest(manifest(**overrides))
+    return _MeasuredGate.from_manifest(manifest(**overrides), verifier=verified)
 
 
 def action(x=0.22, y=0.2, z=0.2):
@@ -120,7 +149,7 @@ class CostEnv:
 def test_six_value_step_surfaces_cost_and_keeps_the_five_element_tuple():
     env = CostEnv(cost=0.75)
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(), clock=clock, wrench_from_obs=_measured_wrench)
     wrapped.reset()
     clock.advance(20)
 
@@ -139,7 +168,7 @@ def test_six_value_step_surfaces_cost_and_keeps_the_five_element_tuple():
 def test_six_value_cost_is_a_float_even_when_the_env_reports_an_int():
     env = CostEnv(cost=2)
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(), clock=clock, wrench_from_obs=_measured_wrench)
     wrapped.reset()
     clock.advance(20)
 
@@ -152,7 +181,8 @@ def test_six_value_cost_is_a_float_even_when_the_env_reports_an_int():
 def test_refused_step_on_a_cost_env_reports_zero_cost_and_steps_nothing():
     env = CostEnv(observation={"ee_pos": [0.2, 0.5, 0.5], "ee_quat": list(QUAT)})
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(keep_out_aabbs=[KEEP_OUT], kinematic_limits={}), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(keep_out_aabbs=[KEEP_OUT], kinematic_limits={}), clock=clock,
+                wrench_from_obs=_measured_wrench)
     wrapped.reset()
 
     clock.advance(20)
@@ -170,7 +200,8 @@ def test_refused_step_on_a_cost_env_reports_zero_cost_and_steps_nothing():
 def test_five_value_env_never_gains_a_cost_key():
     env = CostEnv(values=5)
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(keep_out_aabbs=[KEEP_OUT], kinematic_limits={}), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(keep_out_aabbs=[KEEP_OUT], kinematic_limits={}), clock=clock,
+                wrench_from_obs=_measured_wrench)
     wrapped.reset()
     clock.advance(20)
 
@@ -188,7 +219,7 @@ def test_a_step_returning_neither_four_five_nor_six_values_is_rejected():
     env = CostEnv()
     env.step = lambda action: ({"ee_pos": [0.2, 0.2, 0.2]}, 1.0)
     clock = Clock()
-    wrapped = VLAGatedEnv(env, gate(), clock=clock)
+    wrapped = VLAGatedEnv(env, gate(), clock=clock, wrench_from_obs=_measured_wrench)
     wrapped.reset()
     clock.advance(20)
 
@@ -491,6 +522,46 @@ def test_a_wall_less_arena_is_not_handed_to_the_gate_as_a_keep_in_box():
 
     assert arena_is_enclosed(StubSafetyEnv(), ARENA) is True
     assert arena_is_enclosed(OpenArena(), ARENA) is False
+
+
+def _geometry():
+    return Geometry(
+        arena=(-1.0, -1.0, 1.0, 1.0),
+        hazards=((0.3, -0.2, 0.2), (-0.5, 0.5, 0.15)),
+        robot_radius_m=0.05,
+        motion="omni",
+        step_scale_m=0.1,
+        action_low=(-1.0, -1.0),
+        action_high=(1.0, 1.0),
+        keep_in=True,
+    )
+
+
+def test_the_default_keep_out_is_the_hazard_disc():
+    section = runner.manifest_for(_geometry())["physical_vla"]
+    shapes = section["keep_out_shapes"]
+    assert [shape["shape"] for shape in shapes] == ["circle", "circle"]
+    assert shapes[0]["radius"] == pytest.approx(0.2)
+    assert section["keep_out_aabbs"] == []
+
+
+def test_the_box_keep_out_is_still_available_for_the_comparison():
+    section = runner.manifest_for(_geometry(), "box")["physical_vla"]
+    assert section.get("keep_out_shapes", []) == []
+    assert section["keep_out_aabbs"][0] == pytest.approx([0.1, -0.4, 0.0, 0.5, 0.0, 1.0])
+
+
+def test_an_unknown_keep_out_kind_is_refused():
+    with pytest.raises(ValueError, match="keep-out kind"):
+        runner.manifest_for(_geometry(), "hexagon")
+
+
+def test_recovery_is_off_unless_asked_for():
+    assert "recovery_planning" not in runner.manifest_for(_geometry())["physical_vla"]
+    section = runner.manifest_for(_geometry(), "circle", True)["physical_vla"]
+    assert section["recovery_planning"] is True
+    assert section["recovery_step_m"] == pytest.approx(0.02)
+    assert section["recovery_max_steps"] == pytest.approx(50)
 
 
 def _geometry():

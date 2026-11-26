@@ -213,11 +213,17 @@ class Lokahi(Shield):
     guarantees = _no_guarantees(**dict.fromkeys(GUARANTEE_KEYS, True))
 
     def __init__(self) -> None:
-        self.gate = LokahiVLAGate.from_manifest(bench.MANIFEST)
+        # The bench's own manifest, loaded where no signing key exists: the
+        # opt-out is explicit rather than implied by a missing argument.
+        self.gate = LokahiVLAGate.from_manifest(
+            bench.MANIFEST, allow_unverified_manifest=True
+        )
 
     def decide(self, obs_ts_ns, now_ts_ns, robot_state, chunk, wrench=None) -> Verdict:
         result = self.gate.evaluate_step(
-            obs_ts_ns, now_ts_ns, robot_state, chunk, wrench=wrench, source="vla"
+            obs_ts_ns, now_ts_ns, robot_state, chunk,
+            wrench=bench.NO_CONTACT_WRENCH if wrench is None else wrench,
+            source="vla",
         )
         if result.verdict == VERDICT_COMPLIANT:
             return Verdict("pass", (chunk[0],))

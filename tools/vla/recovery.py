@@ -11,9 +11,18 @@ replay of a logged decision reproduces the escape it proposed.
 
 Clearance is the signed distance from a pose to the nearest keep-out surface:
 positive outside, negative inside, and measured against geometry the caller has
-already grown by the tool radius. The escape rule is that minimum clearance
-strictly increases at every step — moving deeper, or sideways at the same depth,
-is not escape and is never proposed.
+already grown by the tool radius.
+
+The escape rule is depth, not direction. A dense cluster of hazards can leave
+every step that raises clearance to all of them geometrically impossible while a
+tangential step plainly walks out: with eight packed discs, moving 2 cm towards
+open space also moves 2 cm towards a neighbour. What is required here instead is
+that the pose's minimum clearance strictly rise at every step, which is the same
+statement as "the deepest keep-out gains clearance and no keep-out ends below
+the depth the step started at". That admits the sideways step along a neighbour
+it cannot yet leave and still refuses anything that finishes deeper than it
+began. A step that raises every clearance is preferred when candidates tie on
+minimum clearance, so an isolated keep-out is escaped exactly as before.
 """
 from __future__ import annotations
 
@@ -30,7 +39,17 @@ AXIS_DIRECTIONS = (
     (0.0, 0.0, 1.0),
     (0.0, 0.0, -1.0),
 )
-PLANAR_DIRECTIONS = AXIS_DIRECTIONS[:4]
+# Evenly spaced in-plane directions, so a destination that is diagonal to the
+# arena is a direction rather than a staircase of axis steps. Sixteen gives a
+# 22.5-degree gap: fine enough that some candidate always points partly along a
+# genuinely tangential channel, coarse enough that the whole set stays cheap.
+PLANE_DIRECTION_COUNT = 16
+_PLANE_FAN = tuple(
+    (math.cos(2.0 * math.pi * index / PLANE_DIRECTION_COUNT),
+     math.sin(2.0 * math.pi * index / PLANE_DIRECTION_COUNT),
+     0.0)
+    for index in range(PLANE_DIRECTION_COUNT)
+)
 
 # A step that improves clearance by less than this is float noise on a pose that
 # is not moving, not an escape. It keeps "strictly increases" meaningful.
@@ -204,15 +223,16 @@ def minimum_clearance(point: Sequence[float],
     return _min_clearance(pose, list(boxes) + list(shapes))
 
 
-def _nearest(pose: Sequence[float], obstacles: Sequence[Any]
-             ) -> tuple[float, tuple[float, float, float]]:
-    best: tuple[float, tuple[float, float, float]] | None = None
-    for obstacle in obstacles:
-        clearance, direction = obstacle_clearance(pose, obstacle)
-        if best is None or clearance < best[0]:
-            best = (clearance, direction)
-    assert best is not None
-    return best
+def _deepest(pose: Sequence[float], obstacles: Sequence[Any]
+             ) -> tuple[int, float, tuple[float, float, float]]:
+    """The keep-out the pose is deepest into: its index, clearance and gradient."""
+    best_index = 0
+    best_clearance, best_direction = obstacle_clearance(pose, obstacles[0])
+    for index in range(1, len(obstacles)):
+        clearance, direction = obstacle_clearance(pose, obstacles[index])
+        if clearance < best_clearance:
+            best_index, best_clearance, best_direction = index, clearance, direction
+    return best_index, best_clearance, best_direction
 
 
 # ---------------------------------------------------------------------------
@@ -243,22 +263,74 @@ def _is_planar(boxes: Sequence[Sequence[float]], shapes: Sequence[Mapping[str, A
     return True
 
 
-def _directions(pose: Sequence[float], obstacles: Sequence[Any], planar: bool
-                ) -> list[tuple[float, float, float]]:
-    """The fixed candidate set: axis directions, then the clearance gradient.
-
-    The set is fixed on purpose. A planner that enumerated a finer fan of angles
-    would find slightly better paths on some scenes and different ones on the
-    next run of the same scene; these candidates are cheap, exhaustive along the
-    axes, and reproducible.
-    """
-    directions = list(PLANAR_DIRECTIONS if planar else AXIS_DIRECTIONS)
-    _, gradient = _nearest(pose, obstacles)
+def _is_in_plane(obstacle: Any, planar: bool) -> bool:
+    """Whether this keep-out is genuinely 2D, so radial escape belongs in the plane."""
     if planar:
-        gradient = _unit((gradient[0], gradient[1], 0.0))
-    if gradient is not None:
-        directions.append(gradient)
-    return directions
+        return True
+    if isinstance(obstacle, Mapping):
+        return (obstacle.get("kind") or obstacle.get("shape")) == "circle"
+    return False
+
+
+def _cross(left: Sequence[float], right: Sequence[float]) -> tuple[float, float, float]:
+    return (left[1] * right[2] - left[2] * right[1],
+            left[2] * right[0] - left[0] * right[2],
+            left[0] * right[1] - left[1] * right[0])
+
+
+def _tangents(direction: Sequence[float], in_plane: bool
+              ) -> tuple[tuple[float, float, float], ...]:
+    """Two unit directions perpendicular to `direction`, both ways on the same line.
+
+    In the plane the tangent is the exact 90-degree turn, which is what slides
+    along a hazard's surface without approaching it. Out of the plane any fixed
+    perpendicular pair will do; the first is the stable one.
+    """
+    if in_plane:
+        return ((-direction[1], direction[0], 0.0), (direction[1], -direction[0], 0.0))
+    first = (_unit(_cross(direction, (0.0, 0.0, 1.0)))
+             or _unit(_cross(direction, (1.0, 0.0, 0.0))))
+    assert first is not None
+    second = _unit(_cross(direction, first))
+    assert second is not None
+    return (first, second)
+
+
+def _same_direction(left: Sequence[float], right: Sequence[float]) -> bool:
+    return abs(left[0] * right[0] + left[1] * right[1] + left[2] * right[2] - 1.0) < 1e-9
+
+
+def _escape_directions(pose: Sequence[float], obstacles: Sequence[Any], planar: bool
+                       ) -> list[tuple[float, float, float]]:
+    """Axis directions, then the radial from the deepest hazard and its tangents,
+    then an even in-plane fan.
+
+    The order is fixed because it is the final tie-break: two steps that reach the
+    same clearance resolve to the earlier direction, so a replay of a logged
+    decision proposes the same escape. The radial and tangent pair is exact on
+    purpose. In a packed cluster a fan direction a few degrees off the tangent can
+    still approach a neighbour, while the exact tangent only slides along the
+    surface, and that narrow channel is the case this planner exists for.
+    """
+    deepest_index, _, radial = _deepest(pose, obstacles)
+    in_plane = _is_in_plane(obstacles[deepest_index], planar)
+    if in_plane:
+        radial = _unit((radial[0], radial[1], 0.0)) or (1.0, 0.0, 0.0)
+    else:
+        radial = _unit(radial) or (1.0, 0.0, 0.0)
+
+    directions: list[tuple[float, float, float]] = list(AXIS_DIRECTIONS)
+    directions.append(radial)
+    directions.extend(_tangents(radial, in_plane))
+    directions.extend(_PLANE_FAN)
+
+    unique: list[tuple[float, float, float]] = []
+    for direction in directions:
+        unit = _unit(direction)
+        if unit is None or any(_same_direction(unit, kept) for kept in unique):
+            continue
+        unique.append(unit)
+    return unique
 
 
 def _within(pose: Sequence[float], workspace_aabb: Sequence[float] | None) -> bool:
@@ -318,13 +390,15 @@ def escape_path(
     step_m: float = 0.02,
     max_steps: int = 50,
 ) -> list[list[float]]:
-    """Poses leaving the keep-outs around `start_pose`, clearance rising each step.
+    """Poses leaving the keep-outs around `start_pose`, one bounded step at a time.
 
     Returns an empty list when the start pose is already clear, when no candidate
-    direction improves clearance, or when there is nothing to escape from. The
-    returned path never leaves `workspace_aabb`, never has more than `max_steps`
-    poses, and never contains a pose whose minimum clearance is less than the one
-    before it.
+    is admissible, or when there is nothing to escape from. The returned path
+    never leaves `workspace_aabb`, never has more than `max_steps` poses, and at
+    every step raises the pose's minimum clearance: the keep-out it is deepest
+    into gains clearance and no keep-out finishes below the depth the step
+    started at. A step that raises every clearance is preferred when candidates
+    tie, so an isolated keep-out is escaped exactly as before.
 
     `boxes` and `shapes` are keep-outs with the tool radius already applied.
     """
@@ -352,8 +426,7 @@ def escape_path(
     for obstacle in obstacles:
         obstacle_clearance(pose, obstacle)
 
-    clearance = _min_clearance(pose, obstacles)
-    if clearance >= 0.0:
+    if _min_clearance(pose, obstacles) >= 0.0:
         # The gate treats zero depth as outside, so a pose on a surface is clear
         # here too. Offering it a path would be offering to leave nothing.
         return []
@@ -365,9 +438,15 @@ def escape_path(
     )
     path: list[list[float]] = []
     current = pose
+    start_clearances = [obstacle_clearance(current, obstacle)[0] for obstacle in obstacles]
     for _ in range(max_steps):
-        best: tuple[float, tuple[float, float, float]] | None = None
-        for direction in _directions(current, obstacles, planar):
+        deepest_index = min(range(len(obstacles)), key=start_clearances.__getitem__)
+        floor = start_clearances[deepest_index]
+        # Keyed on (minimum clearance, strict everywhere, earlier direction):
+        # clearance decides, and the other two only settle a tie.
+        best_key: tuple[float, bool, int] | None = None
+        best: tuple[float, float, float] | None = None
+        for order, direction in enumerate(_escape_directions(current, obstacles, planar)):
             candidate = (current[0] + direction[0] * step,
                          current[1] + direction[1] * step,
                          current[2] + direction[2] * step)
@@ -375,14 +454,26 @@ def escape_path(
                 continue
             if _crosses_unentered_obstacle(current, candidate, obstacles):
                 continue
-            candidate_clearance = _min_clearance(candidate, obstacles)
-            if candidate_clearance <= clearance + _MIN_GAIN_M:
+            values = [obstacle_clearance(candidate, obstacle)[0] for obstacle in obstacles]
+            # The step must raise the pose's minimum clearance: the deepest
+            # keep-out gains clearance and nothing else finishes below where the
+            # step started. That floor is what a tangential step along a
+            # neighbour preserves, and refusing to drop below it is what stops a
+            # path tunnelling from one hazard into the next. Demanding that every
+            # keep-out improve instead admits no step at all in a packed cluster.
+            if values[deepest_index] <= floor + _MIN_GAIN_M:
                 continue
-            if best is None or candidate_clearance > best[0]:
-                best = (candidate_clearance, candidate)
+            if min(values) < floor - _MIN_GAIN_M:
+                continue
+            strict_everywhere = all(value > start
+                                    for value, start in zip(values, start_clearances))
+            key = (min(values), strict_everywhere, -order)
+            if best_key is None or key > best_key:
+                best_key, best = key, candidate
         if best is None:
             break
-        clearance, current = best
+        current = best
         path.append([current[0], current[1], current[2]])
+        start_clearances = [obstacle_clearance(current, obstacle)[0] for obstacle in obstacles]
     return path
 

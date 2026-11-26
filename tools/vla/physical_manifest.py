@@ -186,6 +186,11 @@ class PhysicalVLAConfig:
     # Read from `physical_envelope`, not from this section.
     max_force_n: float | None = None
     max_torque_nm: float | None = None
+    # Whether a verifier accepted the document these bounds were read from.
+    # `LokahiVLAGate` refuses a gate built from an unverified one unless the
+    # caller opts out explicitly: a gate that enforces an unsigned, unverified
+    # manifest reports COMPLIANT for input nobody vouched for.
+    manifest_verified: bool = False
 
     def policy_for(self, violation_class: str) -> str:
         return self.policy_on_violation.get(violation_class, "SOFT_STOP")
@@ -395,6 +400,12 @@ def load_physical_vla(
     return is fatal: bounds from an unsigned manifest are not bounds. The caller
     supplies it so this module stays free of signing policy, which lives in
     `lokahi_sign` and `lokahi_consent`.
+
+    Omitting the verifier does not verify anything; it records
+    `manifest_verified=False` on the config, and `LokahiVLAGate` then refuses to
+    use the bounds unless its caller passes `allow_unverified_manifest=True`.
+    The loader itself stays permissive so a test can inspect a section without
+    owning a signing key, but nothing that acts on the bounds is.
     """
     if not isinstance(manifest, Mapping):
         raise VLAManifestError("manifest must be an object")
@@ -405,6 +416,7 @@ def load_physical_vla(
         raise VLAManifestError(f"manifest has no {SECTION} section")
 
     config = _parse_section(raw)
+    config["manifest_verified"] = verifier is not None
 
     envelope = manifest.get("physical_envelope") or {}
     if not isinstance(envelope, Mapping):

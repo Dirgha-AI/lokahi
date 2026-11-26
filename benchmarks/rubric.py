@@ -165,14 +165,29 @@ def _state(x, y, z, joints=(0.0, 0.0, 0.0, 0.0)):
 
 
 def _chunk(*points, duration_ms=20.0):
+    # The manifest configures `joint_limits`, so a setpoint that does not say
+    # where the joints are is refused (`structural:...robot_state_missing_joint_pos`).
+    # These probes are about geometry, timing and the wrench, so the joints hold.
     return [
-        {"ee_pos": list(point), "ee_quat": _quat(), "duration_ms": duration_ms}
+        {"ee_pos": list(point), "ee_quat": _quat(), "duration_ms": duration_ms,
+         "joint_pos": [0.0] * len(RUBRIC_MANIFEST["physical_vla"]["kinematic_limits"]["joint_limits"])}
         for point in points
     ]
 
 
+# The rubric's probes model a free-space arm. The manifest declares
+# `physical_envelope` ceilings, and the gate refuses a ceiling it has no
+# measurement for, so every probe states the measurement it is scoring: zero
+# contact. A probe about the wrench passes its own.
+NO_CONTACT_WRENCH = {"force_n": 0.0, "torque_nm": 0.0}
+
+
 def _gate(manifest=None):
-    return LokahiVLAGate.from_manifest(copy.deepcopy(manifest or RUBRIC_MANIFEST))
+    # The rubric's manifests are the fixture's own, so the verified path is what
+    # it exercises.
+    return LokahiVLAGate.from_manifest(
+        copy.deepcopy(manifest or RUBRIC_MANIFEST), verifier=lambda _document: True
+    )
 
 
 def _benchmark_module():
@@ -193,14 +208,18 @@ def _benchmark_module():
 def _replay_steps():
     """A fixed episode that exercises pass, clamp, soft stop and an E-stop latch."""
     return [
-        (_state(0.10, 0.20, 0.50), _chunk((0.16, 0.20, 0.50), (0.22, 0.20, 0.50)), None, 0.0),
+        (_state(0.10, 0.20, 0.50), _chunk((0.16, 0.20, 0.50), (0.22, 0.20, 0.50)),
+         NO_CONTACT_WRENCH, 0.0),
         # Observation 190 ms old: element 0 is still inside the 200 ms age limit,
         # element 1 is at 210 ms and is clamped away.
-        (_state(0.22, 0.20, 0.50), _chunk((0.28, 0.20, 0.50), (0.34, 0.20, 0.50)), None, 190.0),
-        (_state(0.34, 0.20, 0.50), _chunk((float("nan"), 0.20, 0.50)), None, 0.0),
-        (_state(0.34, 0.20, 0.50), _chunk((0.40, 0.20, 0.50)), {"force_n": 100.0}, 0.0),
-        (_state(0.34, 0.20, 0.50), _chunk((0.45, 0.50, 0.50), (0.55, 0.50, 0.50)), None, 0.0),
-        (_state(0.55, 0.50, 0.50), _chunk((0.60, 0.50, 0.50)), None, 0.0),
+        (_state(0.22, 0.20, 0.50), _chunk((0.28, 0.20, 0.50), (0.34, 0.20, 0.50)),
+         NO_CONTACT_WRENCH, 190.0),
+        (_state(0.34, 0.20, 0.50), _chunk((float("nan"), 0.20, 0.50)), NO_CONTACT_WRENCH, 0.0),
+        (_state(0.34, 0.20, 0.50), _chunk((0.40, 0.20, 0.50)),
+         {"force_n": 100.0, "torque_nm": 0.0}, 0.0),
+        (_state(0.34, 0.20, 0.50), _chunk((0.45, 0.50, 0.50), (0.55, 0.50, 0.50)),
+         NO_CONTACT_WRENCH, 0.0),
+        (_state(0.55, 0.50, 0.50), _chunk((0.60, 0.50, 0.50)), NO_CONTACT_WRENCH, 0.0),
     ]
 
 
@@ -336,7 +355,7 @@ def _measure_latency(samples):
     timings = []
     for index in range(samples):
         now = REPLAY_T0 + index * PERIOD_NS
-        result = gate.evaluate_step(now, now, state, chunk)
+        result = gate.evaluate_step(now, now, state, chunk, wrench=NO_CONTACT_WRENCH)
         timings.append(float(result.gate_eval_us))
     budget = float(gate.config.max_gate_eval_us)
     return {
@@ -487,7 +506,10 @@ def _measure_fail_closed():
     )
 
     def forbidden(name, state, chunk, manifest=None, wrench=None):
-        result = _gate(manifest).evaluate_step(REPLAY_T0, REPLAY_T0, state, chunk, wrench=wrench)
+        result = _gate(manifest).evaluate_step(
+            REPLAY_T0, REPLAY_T0, state, chunk,
+            wrench=NO_CONTACT_WRENCH if wrench is None else wrench,
+        )
         probe(name, result.verdict == "FORBIDDEN", f"{result.verdict} {result.violated_invariants[:1]}")
 
     forbidden("missing_ee_pos", {"ee_quat": _quat()}, _chunk((0.10, 0.20, 0.50)))
@@ -560,6 +582,7 @@ def _measure_dynamic():
     result = gate.evaluate_step(
         REPLAY_T0, REPLAY_T0, _state(0.10, 0.20, 0.50),
         _chunk((0.22, 0.30, 0.50), (0.34, 0.40, 0.50), (0.45, 0.50, 0.50)),
+        wrench=NO_CONTACT_WRENCH,
     )
     refused = result.verdict != "COMPLIANT"
     return {
@@ -578,7 +601,8 @@ def _measure_recovery():
 
     gate = _gate()
     escape = gate.evaluate_step(
-        REPLAY_T0, REPLAY_T0, _state(0.50, 0.50, 0.50), _chunk((0.25, 0.50, 0.50))
+        REPLAY_T0, REPLAY_T0, _state(0.50, 0.50, 0.50), _chunk((0.25, 0.50, 0.50)),
+        wrench=NO_CONTACT_WRENCH,
     )
     probe(
         "escape_from_keep_out_is_allowed",
@@ -589,6 +613,7 @@ def _measure_recovery():
     deeper = gate.evaluate_step(
         REPLAY_T0 + PERIOD_NS, REPLAY_T0 + PERIOD_NS,
         _state(0.42, 0.50, 0.50), _chunk((0.50, 0.50, 0.50)),
+        wrench=NO_CONTACT_WRENCH,
     )
     probe(
         "moving_deeper_is_refused",
@@ -601,6 +626,7 @@ def _measure_recovery():
     escaped_after = gate.evaluate_step(
         REPLAY_T0 + 2 * PERIOD_NS, REPLAY_T0 + 2 * PERIOD_NS,
         _state(0.42, 0.50, 0.50), _chunk((0.25, 0.50, 0.50)),
+        wrench=NO_CONTACT_WRENCH,
     )
     probe(
         "next_step_can_escape_the_same_pose",
@@ -609,18 +635,21 @@ def _measure_recovery():
     )
 
     keep_in = _gate().evaluate_step(
-        REPLAY_T0, REPLAY_T0, _state(1.20, 0.50, 0.50), _chunk((1.10, 0.50, 0.50))
+        REPLAY_T0, REPLAY_T0, _state(1.20, 0.50, 0.50), _chunk((1.10, 0.50, 0.50)),
+        wrench=NO_CONTACT_WRENCH,
     )
     probe("keep_in_recovery_is_allowed", keep_in.verdict == "COMPLIANT", keep_in.verdict)
 
     away = _gate().evaluate_step(
-        REPLAY_T0, REPLAY_T0, _state(1.20, 0.50, 0.50), _chunk((1.45, 0.50, 0.50))
+        REPLAY_T0, REPLAY_T0, _state(1.20, 0.50, 0.50), _chunk((1.45, 0.50, 0.50)),
+        wrench=NO_CONTACT_WRENCH,
     )
     probe("keep_in_recovery_away_from_workspace_refused", away.verdict == "FORBIDDEN", away.verdict)
 
     clean = _gate().evaluate_step(
         REPLAY_T0, REPLAY_T0, _state(0.10, 0.20, 0.50),
         _chunk((0.25, 0.30, 0.50), (0.45, 0.50, 0.50)),
+        wrench=NO_CONTACT_WRENCH,
     )
     probe(
         "recovery_is_not_a_licence_to_enter",

@@ -65,10 +65,21 @@ The gate is stateful. An `E_STOP` latch survives every later step until a
 named human calls `human_reset(operator)`, which this class forwards rather
 than reimplementing.
 
+The wrench is part of the contract. A manifest that declares
+`physical_envelope.max_contact_force_n` or `.max_joint_torque_nm` configures a
+ceiling the gate must enforce, and the gate refuses a step it has no measurement
+for (`wrench:wrench_unverifiable`). `wrench_from_obs` is therefore not optional
+when the envelope has a ceiling: an observation with no wrench, or one whose
+wrench is unreadable, is refused exactly like any other missing input.
+
 Example
 -------
-    gate = LokahiVLAGate.from_manifest(manifest)
-    env = VLAGatedEnv(make_env(), gate, to_chunk=policy_output_to_chunk)
+    gate = LokahiVLAGate.from_manifest(manifest, verifier=verify_raw_document)
+    env = VLAGatedEnv(
+        make_env(), gate,
+        to_chunk=policy_output_to_chunk,
+        wrench_from_obs=lambda observation: observation["wrench"],
+    )
     observation, info = env.reset()
     observation, reward, terminated, truncated, info = env.step(policy(observation))
     if not info["lokahi_vla"]["allowed"]:

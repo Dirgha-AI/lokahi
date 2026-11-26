@@ -51,7 +51,7 @@ def _case(case, mode="sync", latency_ms=0, gated=True):
 # ---------------------------------------------------------------------------
 
 def test_manifest_loads_and_clamps_staleness():
-    gate = LokahiVLAGate.from_manifest(MANIFEST)
+    gate = LokahiVLAGate.from_manifest(MANIFEST, allow_unverified_manifest=True)
     assert gate.config.policy_for("stale_action") == "CLAMP"
     assert gate.config.policy_for("workspace_keep_out") == "E_STOP"
 

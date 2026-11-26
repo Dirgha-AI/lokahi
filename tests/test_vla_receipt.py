@@ -81,8 +81,19 @@ def episode_plan():
     ]
 
 
+def verified(_document):
+    """This file's manifest is its own fixture: the verified path is the one under test."""
+    return True
+
+
+# The fixture's manifest declares `physical_envelope` ceilings, and the gate
+# refuses a ceiling it has no measurement for. The receipt records the decision,
+# so the step states the measurement the deployment would have taken.
+MEASURED_WRENCH = {"force_n": 0.0, "torque_nm": 0.0}
+
+
 def build_receipt(signer=None, *, policy_id="policy:toy-lift", episode_id="episode-001"):
-    gate = LokahiVLAGate.from_manifest(manifest())
+    gate = LokahiVLAGate.from_manifest(manifest(), verifier=verified)
     receipt = RolloutReceipt(
         policy_id,
         digest(CANON_JCS, manifest()),
@@ -95,7 +106,7 @@ def build_receipt(signer=None, *, policy_id="policy:toy-lift", episode_id="episo
     for index, (robot, actions) in enumerate(episode_plan()):
         now += 20 * MS
         obs = now - (5 + index) * MS
-        decision = gate.evaluate_step(obs, now, robot, actions)
+        decision = gate.evaluate_step(obs, now, robot, actions, wrench=MEASURED_WRENCH)
         receipt.record_step(decision, obs_ts_ns=obs, now_ts_ns=now, source="vla", context={"tick": index})
     return receipt, gate
 

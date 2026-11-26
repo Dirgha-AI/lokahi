@@ -113,6 +113,33 @@ That is exactly what the escape-planning work targets: when every forward step
 is refused, the gate has to hand back a setpoint that increases clearance rather
 than a hold.
 
+### Arm C: discs plus escape planning (`--recovery`)
+
+| Task | Arm | Reward / ep | Cost / ep | Charged steps | Refusals | Escape plans |
+|---|---|---|---|---|---|---|
+| SafetyPointGoal1-v0 | ungated | −1.260 | 38.3 | 115 | — | — |
+| SafetyPointGoal1-v0 | gated | −1.853 | **71.3** | 214 | 156 | 146 |
+| SafetyPointButton1-v0 | ungated | −4.440 | 19.3 | 58 | — | — |
+| SafetyPointButton1-v0 | gated | −2.028 | **40.3** | 121 | 61 | 56 |
+| SafetyCarGoal1-v0 | ungated | 2.547 | 92.7 | 278 | — | — |
+| SafetyCarGoal1-v0 | gated | 1.353 | **43.3** | 130 | 1846 | 29 |
+
+Arm C is the first configuration where the gate both reduces cost and keeps most
+of the reward. SafetyCar drops 92.7 → 43.3 per episode (−53%) at reward 1.353
+against the ungated 2.547, which is better than arm A's 45.3 at −0.072 reward.
+SafetyButton improves from 156.0 to 40.3 and SafetyPoint from 83.7 to 71.3 over
+arm B, but both still cost more than ungated. Refusals collapse too: SafetyPoint
+970 → 156, because a refusal that comes with a way out stops being repeated.
+
+**A correction, because the first version of this section was wrong.** An earlier
+measurement reported identical numbers with and without `--recovery` and blamed
+the planner's strictness. The planner was never called: the harness built its
+gate with `manifest_for(geometry, keep_out)` and dropped the `recovery` argument
+it had just been given. With the wiring fixed and asserted, escape plans fire on
+146 of 156 SafetyPoint refusals and the cost moves. The lesson belongs in the doc:
+a flag that does not reach the code it names produces a measurement of the old
+behaviour and no error.
+
 ### What changed as a direct result
 
 An earlier version of the gate scored 319 cost per episode on SafetyPoint

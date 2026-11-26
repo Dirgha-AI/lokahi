@@ -6,14 +6,26 @@ decided before anything that merely makes it unsafe.
 
     1. latch      — E_STOP is absorbing until a human re-arms
     2. clock      — non-monotonic or future timestamps
-    3. structural — NaN/Inf, shape mismatch, non-unit quaternion, and the
-                    caller's dynamic keep-out set against the manifest's caps
+    3. structural — NaN/Inf, shape mismatch, non-unit quaternion, a missing,
+                    non-finite or non-positive `duration_ms`, the caller's
+                    dynamic keep-out set against the manifest's caps, and a
+                    `robot_state` that omits a pose or a joint vector a
+                    configured check needs
     4. freshness  — per-element age against max_action_age_ms
     5. watchdog   — gap since the last completed step
-    6. geometry   — keep-in and keep-out sweep over the whole chunk
+    6. geometry   — keep-in and keep-out sweep over the whole chunk, plus a
+                    bounded-excursion recovery rule when the arm already starts
+                    inside a violation
     7. kinematics — displacement, joint limits, velocity and acceleration
     8. wrench     — force, torque, compliance offset
     9. budget     — the gate's own evaluation time
+
+Fail closed is a property of the inputs, not only of the bounds: a check the
+manifest configures never silently skips because the caller left an input out.
+`duration_ms`, `ee_pos`, `joint_pos` and the wrench are each refused
+(`structural:*`, `wrench:wrench_unverifiable`) when the configured check needs
+them, because "I could not measure this" must never be reported as "this is
+fine".
 
 Geometry note the code relies on: a keep-in region is convex, so a polyline
 lies entirely inside it exactly when every vertex does. A keep-out region is the
@@ -218,9 +230,34 @@ def _angle_between(first: Sequence[float], second: Sequence[float]) -> float:
 # ---------------------------------------------------------------------------
 
 class LokahiVLAGate:
-    """One gate per robot. Stateful only in its latch and last-seen timestamps."""
+    """One gate per robot. Stateful only in its latch and last-seen timestamps.
 
-    def __init__(self, config: PhysicalVLAConfig) -> None:
+    A gate is only built from bounds this process can trust. `config` must come
+    from `load_physical_vla(..., verifier=...)`: a manifest the caller never
+    verified is refused with `VLAManifestError: unverified_manifest`, because a
+    gate that trusts an unsigned bounds-free document is a gate that checks
+    nothing while reporting COMPLIANT.
+
+    The explicit opt-out is `allow_unverified_manifest=True`, for a deployment
+    whose trust boundary is somewhere this module cannot see (a manifest that
+    was verified by a caller-controlled pipeline before it reached the process,
+    a test fixture, a bench). It is opt-in per construction, it is never inferred
+    from the document, and a refusal is never silent: the gate either records
+    `config.manifest_verified` as True or it refuses to exist.
+    """
+
+    def __init__(
+        self,
+        config: PhysicalVLAConfig,
+        *,
+        allow_unverified_manifest: bool = False,
+    ) -> None:
+        if not config.manifest_verified and not allow_unverified_manifest:
+            raise VLAManifestError(
+                "unverified_manifest: this gate enforces bounds only from a manifest the "
+                "caller verified; pass verifier= to load_physical_vla/from_manifest, or "
+                "allow_unverified_manifest=True to accept an unsigned document explicitly"
+            )
         self.config = config
         self.state = ARMED
         self.last_now_ns: int | None = None
@@ -230,10 +267,18 @@ class LokahiVLAGate:
         self.interventions = 0
 
     @classmethod
-    def from_manifest(cls, source, verifier=None) -> "LokahiVLAGate":
+    def from_manifest(
+        cls,
+        source,
+        verifier=None,
+        *,
+        allow_unverified_manifest: bool = False,
+    ) -> "LokahiVLAGate":
         if isinstance(source, Mapping):
-            return cls(load_physical_vla(source, verifier=verifier))
-        return cls(load_physical_vla_file(str(source), verifier=verifier))
+            config = load_physical_vla(source, verifier=verifier)
+        else:
+            config = load_physical_vla_file(str(source), verifier=verifier)
+        return cls(config, allow_unverified_manifest=allow_unverified_manifest)
 
     # -- state transitions --------------------------------------------------
 
@@ -293,11 +338,28 @@ class LokahiVLAGate:
         self.last_now_ns = now_ns
 
         # 3. structural
-        chunk = list(action_chunk or [])
+        if action_chunk is None:
+            chunk: list[Any] = []
+        elif isinstance(action_chunk, Sequence) and not isinstance(action_chunk, (str, bytes)):
+            chunk = list(action_chunk)
+        else:
+            # An input this gate cannot iterate is refused, not raised out of:
+            # an exception in the hot path is a crash, and a crash is neither a
+            # verdict nor evidence.
+            chunk = []
+            violations.append(("structural", "structural:action_chunk_not_a_sequence"))
         if not chunk:
             violations.append(("structural", "structural:empty_chunk"))
         current = _try_vector(robot_state, "ee_pos", 3)
         joint_now = _try_vector(robot_state, "joint_pos", None)
+        current_quat = _robot_quaternion(robot_state)
+        if current_quat is False:
+            # Present but unusable (non-finite, wrong length, or a zero
+            # quaternion). Refused rather than ignored: a caller that reports an
+            # orientation this gate cannot read is reporting nothing, and the
+            # rotation bound would silently measure 0 rad against it.
+            violations.append(("structural", "structural:robot_state_invalid_ee_quat"))
+            current_quat = None
         parsed: list[dict[str, Any]] = []
         for index, element in enumerate(chunk):
             try:
@@ -317,21 +379,10 @@ class LokahiVLAGate:
                     "ee_pos": position,
                     "ee_quat": quat,
                     "joint_pos": joints,
-                    "duration_ms": float(element.get("duration_ms", config.control_period_ms)),
+                    "duration_ms": _element_duration(element),
                 })
             except (ValueError, TypeError) as exc:
                 violations.append(("structural", f"structural:chunk[{index}]:{exc}"))
-
-        if current is None and (
-            config.workspace_aabb is not None
-            or config.keep_out_aabbs
-            or config.max_pos_delta_m is not None
-            or config.max_rot_delta_rad is not None
-        ):
-            # Fail closed. Without the current pose the geometric and kinematic
-            # checks cannot run at all, and a gate that silently skips its own
-            # checks is worse than no gate: it reports COMPLIANT.
-            violations.append(("structural", "structural:robot_state_missing_ee_pos"))
 
         # Per-step keep-outs are input, not manifest state, so they are
         # validated next to the chunk's own structure and before anything
@@ -344,6 +395,27 @@ class LokahiVLAGate:
         keep_out_source = (
             KEEP_OUT_SOURCE_CALLER if dynamic_count or dynamic_reasons else KEEP_OUT_SOURCE_MANIFEST
         )
+
+        if current is None and _needs_current_pose(config, dynamic_shapes):
+            # Fail closed. Without the current pose the geometric and kinematic
+            # checks cannot run at all, and a gate that silently skips its own
+            # checks is worse than no gate: it reports COMPLIANT. Every source
+            # that needs the pose is listed in `_needs_current_pose`; a source
+            # missing from that list is a check that never runs.
+            violations.append(("structural", "structural:robot_state_missing_ee_pos"))
+
+        if _joint_checks_configured(config):
+            # The same rule for the joints. `joint_limits` is a per-element
+            # predicate and velocity needs a previous joint vector, so a missing
+            # one silently skipped a configured limit; a Cartesian-only state is
+            # exactly the deployment that has no other description of the joints.
+            if joint_now is None:
+                violations.append(("structural", "structural:robot_state_missing_joint_pos"))
+            for index, element in enumerate(parsed):
+                if element["joint_pos"] is None:
+                    violations.append(
+                        ("structural", f"structural:chunk[{index}]:robot_state_missing_joint_pos")
+                    )
 
         # 4. freshness, per element, not per chunk
         fresh = len(parsed)
@@ -384,23 +456,29 @@ class LokahiVLAGate:
                         # hazard at step 72 and every later step was refused, so
                         # the arm stayed in it for the rest of the episode.
                         #
-                        # The test is on the end pose, and it is non-worsening
-                        # rather than strict improvement. Both details came from
-                        # a simulator. Requiring every waypoint to be no worse
-                        # trapped a car, because it must turn before it can
-                        # leave and its penetration deepens mid-chunk. Requiring
-                        # strict improvement trapped it again, because turning in
-                        # place ends at the same depth — so the one move that
-                        # points it at the exit was refused. A hold inside a
-                        # hazard is charged either way; a refusal only removes
-                        # the means of escape.
+                        # The end pose may be no worse than the start, and it is
+                        # non-worsening rather than strict improvement, because
+                        # turning in place ends at the same depth — so the one
+                        # move that points it at the exit was refused.
+                        # What is not allowed is an unbounded excursion: a chunk
+                        # that wanders further out than the clearance it gains
+                        # ("leaving" by ending slightly closer after going 1.5 m
+                        # the wrong way) is refused, and `margins` carries both
+                        # numbers so the two cannot be confused.
                         distances = [_outside_distance(point, keep_in) for point in points]
-                        if distances[-1] <= start_violation:
-                            margins["keep_in_recovery_m"] = start_violation - distances[-1]
-                        else:
+                        excursion = max(distances) - start_violation
+                        gain = start_violation - distances[-1]
+                        if gain < 0.0:
                             violations.append(
                                 ("recovery", f"recovery_required:keep_in:start={start_violation:.4f}m")
                             )
+                        elif excursion > gain + _EPS:
+                            violations.append(
+                                ("recovery", f"recovery_required:keep_in:excursion:{excursion:.4f}m")
+                            )
+                        else:
+                            margins["keep_in_recovery_m"] = gain
+                            margins["keep_in_recovery_excursion_m"] = excursion
                     elif [point for point in points if not _inside(point, keep_in)]:
                         violations.append(
                             ("workspace_keep_in", "workspace_keep_in:vertices_outside")
@@ -414,14 +492,33 @@ class LokahiVLAGate:
             for box_index, box in enumerate(config.keep_out_aabbs):
                 obstacle = _grow(box, config.tool_radius_m)
                 start_depth = _penetration_depth(points[0], obstacle)
-                if start_depth > 0.0:
+                # A start pose on the surface reads as depth 0, so the recovery
+                # branch never ran for it and the sweep refused — and latched —
+                # the one chunk that was leaving. Contact is inside contact:
+                # touching counts as inside, and depth 0 there means "as deep as
+                # it gets", with no room left to be deeper.
+                if start_depth > 0.0 or _penetration_depth(points[0], _grow(obstacle, _EPS)) > 0.0:
                     depths = [_penetration_depth(point, obstacle) for point in points]
-                    if depths[-1] <= start_depth:
-                        margins[f"keep_out_recovery_{box_index}_m"] = start_depth - depths[-1]
+                    excursion = max(depths) - start_depth
+                    gain = start_depth - depths[-1]
+                    if gain < 0.0:
+                        violations.append(
+                            ("recovery", f"recovery_required:keep_out:{box_index}:depth={start_depth:.4f}m")
+                        )
                         continue
-                    violations.append(
-                        ("recovery", f"recovery_required:keep_out:{box_index}:depth={start_depth:.4f}m")
-                    )
+                    if excursion > gain + _EPS:
+                        violations.append(
+                            ("recovery", f"recovery_required:keep_out:{box_index}:excursion:{excursion:.4f}m")
+                        )
+                        continue
+                    reentry = _reentry_segment(points, obstacle, depths)
+                    if reentry is not None:
+                        violations.append(
+                            ("workspace_keep_out", f"workspace_keep_out:{box_index}:segment_{reentry}")
+                        )
+                        continue
+                    margins[f"keep_out_recovery_{box_index}_m"] = gain
+                    margins[f"keep_out_recovery_{box_index}_excursion_m"] = excursion
                     continue
                 for step in range(len(points) - 1):
                     if segment_hits_box(points[step], points[step + 1], obstacle):
@@ -437,25 +534,41 @@ class LokahiVLAGate:
             # set the obstacle came from.
             sweep_targets = [
                 (f"shape_{shape_index}", f"{shape_index}", shape,
-                 f"keep_out_recovery_shape_{shape_index}_m")
+                 f"keep_out_recovery_shape_{shape_index}")
                 for shape_index, shape in enumerate(config.keep_out_shapes)
             ]
             sweep_targets += [
                 (f"dynamic_{index}", f"dynamic_{index}", shape,
-                 f"keep_out_recovery_dynamic_{index}_m")
+                 f"keep_out_recovery_dynamic_{index}")
                 for index, shape in enumerate(dynamic_shapes)
             ]
             for sweep_label, recovery_label, shape, recovery_key in sweep_targets:
                 margin = config.tool_radius_m
                 start_depth = geometry.inside_depth(shape, points[0], margin)
-                if start_depth > 0.0:
+                # Same surface rule as a box: a pose resting on the circle is
+                # contact, and a chunk that leaves it is not an entry.
+                if start_depth > 0.0 or geometry.inside_depth(shape, points[0], margin + _EPS) > 0.0:
                     depths = [geometry.inside_depth(shape, point, margin) for point in points]
-                    if depths[-1] <= start_depth:
-                        margins[recovery_key] = start_depth - depths[-1]
+                    excursion = max(depths) - start_depth
+                    gain = start_depth - depths[-1]
+                    if gain < 0.0:
+                        violations.append(
+                            ("recovery", f"recovery_required:keep_out:{recovery_label}:depth={start_depth:.4f}m")
+                        )
                         continue
-                    violations.append(
-                        ("recovery", f"recovery_required:keep_out:{recovery_label}:depth={start_depth:.4f}m")
-                    )
+                    if excursion > gain + _EPS:
+                        violations.append(
+                            ("recovery", f"recovery_required:keep_out:{recovery_label}:excursion:{excursion:.4f}m")
+                        )
+                        continue
+                    reentry = _reentry_segment(points, shape, depths, margin)
+                    if reentry is not None:
+                        violations.append(
+                            ("workspace_keep_out", f"workspace_keep_out:{sweep_label}:segment_{reentry}")
+                        )
+                        continue
+                    margins[f"{recovery_key}_m"] = gain
+                    margins[f"{recovery_key}_excursion_m"] = excursion
                     continue
                 for step in range(len(points) - 1):
                     if geometry.sweep_hits(shape, points[step], points[step + 1], margin):
@@ -468,7 +581,7 @@ class LokahiVLAGate:
         clamp_limit = fresh
         if current is not None and parsed:
             previous = current
-            previous_quat = _try_vector(robot_state, "ee_quat", 4)
+            previous_quat = current_quat
             for index, element in enumerate(parsed):
                 delta = math.dist(previous, element["ee_pos"])
                 if config.max_pos_delta_m is not None and delta > config.max_pos_delta_m:
@@ -484,8 +597,12 @@ class LokahiVLAGate:
                         )
                         clamp_limit = min(clamp_limit, index)
                 previous = element["ee_pos"]
-                previous_quat = element["ee_quat"]
-            if config.joint_limits and joint_now is not None:
+                if element["ee_quat"] is not None:
+                    # Carry the last known orientation forward. Overwriting with
+                    # None disabled the rotation bound for every element after
+                    # the first one that omitted a quaternion.
+                    previous_quat = element["ee_quat"]
+            if config.joint_limits:
                 for index, element in enumerate(parsed):
                     if element["joint_pos"] is None:
                         continue
@@ -539,17 +656,26 @@ class LokahiVLAGate:
                     previous_velocity = velocity
 
         # 8. wrench
-        if wrench:
-            force = _scalar_or_norm("force", wrench.get("force_n"))
-            torque = _scalar_or_norm("torque", wrench.get("torque_nm"))
-            if force is not None and config.max_force_n is not None:
-                margins["force_margin_n"] = config.max_force_n - force
-                if force > config.max_force_n:
-                    violations.append(("wrench", f"wrench:force:{force:.2f}N>{config.max_force_n}N"))
-            if torque is not None and config.max_torque_nm is not None:
-                margins["torque_margin_nm"] = config.max_torque_nm - torque
-                if torque > config.max_torque_nm:
-                    violations.append(("wrench", f"wrench:torque:{torque:.2f}Nm>{config.max_torque_nm}Nm"))
+        if wrench is not None and not isinstance(wrench, Mapping):
+            violations.append(("wrench", "wrench:wrench_unverifiable:not_an_object"))
+        force = _scalar_or_norm("force", wrench.get("force_n")) if isinstance(wrench, Mapping) else None
+        torque = _scalar_or_norm("torque", wrench.get("torque_nm")) if isinstance(wrench, Mapping) else None
+        # A ceiling the manifest configures is a claim the gate is expected to
+        # hold, so an absent or unreadable measurement is "force unknown", not
+        # "force fine". A sensor that drops out (NaN) is exactly the moment a
+        # contact violation would otherwise be invisible.
+        if config.max_force_n is not None and force is None:
+            violations.append(("wrench", "wrench:wrench_unverifiable:force_n"))
+        if config.max_torque_nm is not None and torque is None:
+            violations.append(("wrench", "wrench:wrench_unverifiable:torque_nm"))
+        if force is not None and config.max_force_n is not None:
+            margins["force_margin_n"] = config.max_force_n - force
+            if force > config.max_force_n:
+                violations.append(("wrench", f"wrench:force:{force:.2f}N>{config.max_force_n}N"))
+        if torque is not None and config.max_torque_nm is not None:
+            margins["torque_margin_nm"] = config.max_torque_nm - torque
+            if torque > config.max_torque_nm:
+                violations.append(("wrench", f"wrench:torque:{torque:.2f}Nm>{config.max_torque_nm}Nm"))
 
         self.steps_evaluated += 1
         self.last_step_ns = now_ns
@@ -560,6 +686,7 @@ class LokahiVLAGate:
             return self._result(
                 started, [], margins, robot_state, VERDICT_COMPLIANT, ARMED, None,
                 keep_out_source=keep_out_source, dynamic_keep_out_count=dynamic_count,
+                dynamic_shapes=dynamic_shapes,
             )
 
         self.interventions += 1
@@ -577,6 +704,7 @@ class LokahiVLAGate:
             chunk=parsed,
             keep_out_source=keep_out_source,
             dynamic_keep_out_count=dynamic_count,
+            dynamic_shapes=dynamic_shapes,
         )
 
     # -- result assembly ----------------------------------------------------
@@ -593,6 +721,7 @@ class LokahiVLAGate:
         chunk: list[dict[str, Any]] | None = None,
         keep_out_source: str = KEEP_OUT_SOURCE_MANIFEST,
         dynamic_keep_out_count: int = 0,
+        dynamic_shapes: Sequence[Mapping[str, Any]] = (),
     ) -> VLADecisionResult:
         safe_action = None
         if verdict == VERDICT_CLAMPED and chunk:
@@ -611,7 +740,7 @@ class LokahiVLAGate:
                 safe_action["note"] = "hold at last observed pose; no retract path is planned"
 
         replanned: list[dict[str, Any]] = []
-        if self.config.clamp_strategy == "replan" and chunk:
+        if self.config.clamp_strategy == "replan" and chunk and verdict == VERDICT_CLAMPED:
             keep = clamped_index if clamped_index is not None else len(chunk)
             legal = chunk[:keep]
             velocity = _chunk_velocity(legal)
@@ -637,18 +766,27 @@ class LokahiVLAGate:
                     if safe_action is not None:
                         safe_action["replan_refused"] = str(exc)
                 else:
-                    replanned = [
-                        {"t_ms": round(waypoint.time_s * 1000.0, 3),
-                         "ee_pos": list(waypoint.position),
-                         "ee_vel": list(waypoint.velocity)}
-                        for waypoint in profile
-                    ]
-                    safe_action = {
-                        "mode": "replanned_stop",
-                        "actions": legal,
-                        "stop_profile": replanned,
-                        "note": "deceleration from the last legal pose; gated again before execution",
-                    }
+                    unsafe = _stop_profile_refusal(self.config, start, profile, dynamic_shapes)
+                    if unsafe is not None:
+                        # The profile is motion, and this gate authorises motion
+                        # only after sweeping it. A deceleration that drives
+                        # through a hazard is a refusal, not a stop.
+                        if safe_action is None:
+                            safe_action = {"mode": "clamped_chunk", "actions": legal}
+                        safe_action["replan_refused"] = unsafe
+                    else:
+                        replanned = [
+                            {"t_ms": round(waypoint.time_s * 1000.0, 3),
+                             "ee_pos": list(waypoint.position),
+                             "ee_vel": list(waypoint.velocity)}
+                            for waypoint in profile
+                        ]
+                        safe_action = {
+                            "mode": "replanned_stop",
+                            "actions": legal,
+                            "stop_profile": replanned,
+                            "note": "deceleration from the last legal pose; gated again before execution",
+                        }
 
         escape: list[list[float]] = []
         if (
@@ -742,6 +880,146 @@ class LokahiVLAGate:
 # helpers
 # ---------------------------------------------------------------------------
 
+def _element_duration(element: Mapping[str, Any]) -> float:
+    """A setpoint's duration, validated before freshness or velocity divides by it.
+
+    NaN here made the age of every later element NaN, and `NaN > limit` is
+    False, so a stale tail looked fresh; a negative value made the tail's age
+    smaller than the head's. There is no default: a chunk that does not say how
+    long a setpoint lasts cannot be judged for freshness at all.
+    """
+    if "duration_ms" not in element:
+        raise ValueError("duration_ms:missing")
+    value = element["duration_ms"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("duration_ms:not_a_number")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("duration_ms:not_finite")
+    if number <= 0.0:
+        raise ValueError(f"duration_ms:non_positive_duration:{number}")
+    return number
+
+
+def _robot_quaternion(robot_state: Mapping[str, Any]) -> list[float] | None | bool:
+    """The current orientation, normalised; `False` when it is present but unusable.
+
+    `robot_state` is not the chunk, so it never went through the structural
+    quaternion check. `_angle_between` takes `abs(dot)` and clamps it at 1, so a
+    `|q| = 2` state measured a 45° setpoint as 0 rad — a bound that silently
+    never fires. A usable quaternion is normalised here; a degenerate or
+    non-finite one is a refusal, because an orientation nobody can read is not
+    an orientation of zero rotation.
+    """
+    if not isinstance(robot_state, Mapping) or robot_state.get("ee_quat") is None:
+        return None
+    quat = _try_vector(robot_state, "ee_quat", 4)
+    if quat is None:
+        return False
+    norm = _quat_norm(quat)
+    if not math.isfinite(norm) or norm <= _QUAT_TOL:
+        return False
+    return [component / norm for component in quat]
+
+
+def _needs_current_pose(
+    config: PhysicalVLAConfig, dynamic_shapes: Sequence[Mapping[str, Any]]
+) -> bool:
+    """Whether any configured check reads the current end-effector pose.
+
+    Every geometric source belongs here. A source missing from this list is a
+    check that silently never runs when the caller forgets `ee_pos`.
+    """
+    return (
+        config.workspace_aabb is not None
+        or bool(config.keep_out_aabbs)
+        or bool(config.keep_out_shapes)
+        or bool(dynamic_shapes)
+        or config.max_pos_delta_m is not None
+        or config.max_rot_delta_rad is not None
+    )
+
+
+def _joint_checks_configured(config: PhysicalVLAConfig) -> bool:
+    return bool(
+        config.joint_limits
+        or config.max_joint_vel_rad_s is not None
+        or config.max_joint_acc_rad_s2 is not None
+    )
+
+
+def _reentry_segment(
+    points: Sequence[Sequence[float]],
+    obstacle: Any,
+    depths: Sequence[float],
+    margin: float | None = None,
+) -> int | None:
+    """The first segment that starts clear of an obstacle and enters it.
+
+    A recovery chunk may leave a hazard it started in. It may not leave and come
+    back: the end-pose test alone accepted a chunk that exited a box and was
+    driven straight back into it. A start resting on the surface counts as
+    contact, so only the obstacle's *interior* counts as an entry — otherwise a
+    chunk that merely departs from a face intersects it at t = 0 and reads as
+    re-entry.
+    """
+    for segment in range(len(points) - 1):
+        if depths[segment] > _EPS:
+            continue
+        if depths[segment + 1] > _EPS:
+            return segment
+        if margin is None:
+            interior = _shrink(obstacle, _EPS)
+            hit = interior is not None and segment_hits_box(
+                points[segment], points[segment + 1], interior
+            )
+        else:
+            hit = geometry.sweep_hits(
+                obstacle, points[segment], points[segment + 1], margin - _EPS
+            )
+        if hit:
+            return segment
+    return None
+
+
+def _stop_profile_refusal(
+    config: PhysicalVLAConfig,
+    start: Sequence[float],
+    profile: Sequence[Any],
+    dynamic_shapes: Sequence[Mapping[str, Any]],
+) -> str | None:
+    """The first check a replanned stop fails, or None when every waypoint is clear.
+
+    The profile leaves the gate as `safe_action`, which a consumer executes, so
+    it is swept with the same geometry as the chunk: every waypoint inside the
+    keep-in, and every segment from the last legal pose clear of every keep-out.
+    """
+    radius = config.tool_radius_m
+    points = [list(start)] + [list(waypoint.position) for waypoint in profile]
+    if config.workspace_aabb is not None:
+        keep_in = _shrink(config.workspace_aabb, radius)
+        if keep_in is None:
+            return "replanned_stop:unsafe:workspace_keep_in:tool_radius_exceeds_box"
+        for index, point in enumerate(points[1:]):
+            if not _inside(point, keep_in):
+                return f"replanned_stop:unsafe:workspace_keep_in:{index}"
+    obstacles: list[tuple[str, Any]] = [
+        (f"{index}", _grow(box, radius)) for index, box in enumerate(config.keep_out_aabbs)
+    ]
+    shapes: list[tuple[str, Mapping[str, Any]]] = [
+        (f"shape_{index}", shape) for index, shape in enumerate(config.keep_out_shapes)
+    ]
+    shapes += [(f"dynamic_{index}", shape) for index, shape in enumerate(dynamic_shapes)]
+    for segment in range(len(points) - 1):
+        for label, box in obstacles:
+            if segment_hits_box(points[segment], points[segment + 1], box):
+                return f"replanned_stop:unsafe:workspace_keep_out:{label}:{segment}"
+        for label, shape in shapes:
+            if geometry.sweep_hits(shape, points[segment], points[segment + 1], radius):
+                return f"replanned_stop:unsafe:workspace_keep_out:{label}:{segment}"
+    return None
+
+
 def _parse_dynamic_keep_outs(
     config: PhysicalVLAConfig,
     supplied: Any,
@@ -796,7 +1074,10 @@ def _chunk_velocity(chunk: Sequence[Mapping[str, Any]]) -> list[float] | None:
     seconds = float(duration_ms) / 1000.0
     if seconds <= 0.0:
         return None
-    return [(latest[axis] - previous[axis]) / seconds for axis in range(3)]
+    velocity = [(latest[axis] - previous[axis]) / seconds for axis in range(3)]
+    if not all(math.isfinite(component) for component in velocity):
+        return None
+    return velocity
 
 
 def _try_vector(source: Mapping[str, Any], key: str, length: int | None) -> list[float] | None:

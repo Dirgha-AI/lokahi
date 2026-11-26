@@ -7,6 +7,7 @@ outside world keeps charging it. These tests pin the second artefact: a path
 that strictly increases clearance, stays in the workspace, and never softens the
 verdict, the state or the interlock.
 """
+import math
 import os
 import sys
 
@@ -14,7 +15,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tools")))
 
-from vla import recovery
+from vla import geometry, recovery
 from vla.physical_manifest import VLAManifestError, load_physical_vla
 from vla.vla_gate import (
     ARMED,
@@ -49,8 +50,32 @@ def manifest(**overrides):
     }
 
 
+MEASURED_WRENCH = {"force_n": 1.0, "torque_nm": 1.0}
+
+
+def verified(_document):
+    """This file's manifests are its own fixture, so the verified path is the one under test."""
+    return True
+
+
+class _MeasuredGate(LokahiVLAGate):
+    """The fixture's adapter measures the wrench the manifest's ceilings apply to.
+
+    The gate refuses a configured force or torque ceiling it has no measurement
+    for (`wrench:wrench_unverifiable`), so every step in a deployment with those
+    ceilings carries a wrench. Saying that once here keeps each test about the
+    check it names; tests that are about the wrench pass their own.
+    """
+
+    def evaluate_step(self, obs_ts_ns, now_ts_ns, robot_state, action_chunk,
+                      wrench=MEASURED_WRENCH, **kwargs):
+        return super().evaluate_step(
+            obs_ts_ns, now_ts_ns, robot_state, action_chunk, wrench=wrench, **kwargs
+        )
+
+
 def gate(**overrides):
-    return LokahiVLAGate.from_manifest(manifest(**overrides))
+    return _MeasuredGate.from_manifest(manifest(**overrides), verifier=verified)
 
 
 def state(x=0.5, y=0.5, z=0.5):
@@ -276,3 +301,97 @@ def test_a_shaped_keep_out_refusal_also_gets_an_escape():
     assert result.state == SOFT_STOP
     assert result.escape_path
     assert clearances(result.escape_path, shapes=[CIRCLE])[-1] > 0.0
+
+
+
+
+def clustered_shapes():
+    """A central disc ringed by seven, all touching: eight packed keep-outs."""
+    shapes = [{"kind": "circle", "centre": [0.5, 0.5], "radius": 0.2}]
+    for index in range(7):
+        angle = 2.0 * math.pi * index / 7.0
+        shapes.append({"kind": "circle", "radius": 0.2,
+                       "centre": [0.5 + 0.38 * math.cos(angle),
+                                  0.5 + 0.38 * math.sin(angle)]})
+    return shapes
+
+
+def clustered_start():
+    """Inside the central disc, 17 cm out along 60 degrees."""
+    angle = math.radians(60.0)
+    return [0.5 + 0.17 * math.cos(angle), 0.5 + 0.17 * math.sin(angle), 0.5]
+
+
+def wall_shapes():
+    """Three hazard discs along the 45-degree line: a wall with no gap in it."""
+    step = 0.14 * 2 ** -0.5
+    return [{"kind": "circle", "radius": 0.2,
+             "centre": [0.5 + offset * step, 0.5 + offset * step]}
+            for offset in (-1.0, 1.0, 2.0)]
+
+
+def test_eight_packed_hazards_no_longer_trap_the_robot():
+    """Every axis step reduces clearance to a neighbour; the search must still leave.
+
+    This is the scene the six-direction search returned [] for: the robot sits in
+    one of eight touching discs, and moving 2 cm towards open space moves 2 cm
+    towards another disc. The escape exists, but it is not along an axis.
+    """
+    shapes = clustered_shapes()
+    start = clustered_start()
+    assert recovery.minimum_clearance(start, (), shapes) < 0.0
+
+    path = recovery.escape_path(start, (), shapes, BOX, 0.02, 50)
+    assert path, "a packed cluster must still yield a way out"
+    assert recovery.minimum_clearance(path[-1], (), shapes) > 0.0, path[-1]
+
+    floor = recovery.minimum_clearance(start, (), shapes)
+    for pose in path:
+        clearance = recovery.minimum_clearance(pose, (), shapes)
+        assert clearance > floor, (floor, clearance)
+        floor = clearance
+
+
+def test_a_wall_of_hazards_is_left_around_its_end():
+    """The direct way out is blocked, so the only admissible step is tangential."""
+    shapes = wall_shapes()
+    start = [0.5, 0.5, 0.5]
+    floor = recovery.minimum_clearance(start, (), shapes)
+    assert floor < 0.0
+
+    step = 0.02
+    inward = [start[0] - step * 2 ** -0.5, start[1] - step * 2 ** -0.5, 0.5]
+    assert recovery.minimum_clearance(inward, (), shapes) <= floor, \
+        "the direct line through the wall must not be an escape"
+
+    path = recovery.escape_path(start, (), shapes, BOX, step, 50)
+    assert path
+    assert recovery.minimum_clearance(path[-1], (), shapes) > 0.0
+
+    first = (path[0][0] - start[0], path[0][1] - start[1])
+    assert abs(first[0]) > 0.01 and abs(first[1]) > 0.01, first
+
+
+def test_a_packed_cluster_plans_deterministically():
+    shapes = clustered_shapes()
+    first = recovery.escape_path(clustered_start(), (), shapes, BOX, 0.02, 50)
+    second = recovery.escape_path(clustered_start(), (), shapes, BOX, 0.02, 50)
+    assert first and first == second
+
+
+def test_a_packed_cluster_respects_workspace_steps_and_the_swept_test():
+    shapes = clustered_shapes()
+    start = clustered_start()
+
+    clipped = recovery.escape_path(start, (), shapes, BOX, 0.02, 3)
+    assert len(clipped) == 3
+
+    path = recovery.escape_path(start, (), shapes, BOX, 0.02, 50)
+    assert path
+    previous = start
+    for pose in path:
+        assert all(BOX[axis] <= pose[axis] <= BOX[axis + 3] for axis in range(3)), pose
+        for shape in shapes:
+            if recovery.obstacle_clearance(previous, shape)[0] > 0.0:
+                assert not geometry.sweep_hits(shape, previous, pose), (previous, pose)
+        previous = pose
