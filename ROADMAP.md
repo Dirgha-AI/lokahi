@@ -262,7 +262,7 @@ exists, acceptance criterion not fully met) · `open` (nothing on disk).
 | R1-28 | Tool-description pinning + drift refusal | W1 | done | `tests/test_r1_features.py` pinning block |
 | R1-29 | 60-point enterprise RFP checklist | W10 | partial | `docs/ENTERPRISE_RFP.md`; self-assessment not point-by-point |
 
-Nine `open`, nine `partial`, eleven `done`. The `partial` rows are the honest
+Five `open`, ten `partial`, fourteen `done`. The `partial` rows are the honest
 measure of what "enterprise-ready" meant when v1.1.0 shipped.
 
 ### V-series (new, this roadmap)
