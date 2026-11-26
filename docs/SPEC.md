@@ -23,6 +23,21 @@ A node publishes one signed JSON document. The fields below are required unless 
 
 Canonical JSON (RFC 8785 JCS subset) requires sorted keys, whitespace stripping (separators `(",", ":")`), and UTF-8 encoding. Any manifest that fails to parse, fails verification, or carries an unreadable or timezone-naive expiry is treated as expired.
 
+### 1.1 Canonical versions (v1.3.1)
+
+Two canonical forms exist, and every hash says which one produced it.
+
+| Version | Function | Floats | Used by |
+|---|---|---|---|
+| 1 | `canonical()` | Python `repr` — `1.0`, `1e-07`, `-0.0` | All manifests, approvals and action digests; every ledger written before v1.3.1 |
+| 2 | `canonical_jcs()` | ECMAScript `Number::toString` per RFC 8785 — `1`, `1e-7`, `0` | Ledger entries created with `Ledger(canon=2)`, and VLA receipts from v1.4.0 |
+
+An entry hashes under the version it declares: absent or `1` means `canonical()`,
+`2` means `canonical_jcs()`. An unreadable version is a verification failure, not
+a fallback. Version 1 remains normative for manifests because changing it would
+invalidate every issued signature, and the difference only becomes visible when a
+verifier outside Python must reproduce a digest over floats.
+
 ## 2. Decision Order (15 Normative Rules)
 
 Denials are ordered by cost and certainty so that no downstream rule can rescue a forged, expired, or out-of-scope manifest.

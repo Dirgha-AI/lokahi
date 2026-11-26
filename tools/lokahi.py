@@ -37,11 +37,13 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import time
 from dataclasses import dataclass, field, replace
+from decimal import Decimal
 from typing import Iterable
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 COMPLIANT = "compliant"
 ESCALATE = "escalate"
@@ -57,8 +59,107 @@ SUSPENSION_QUORUM = 2
 # --------------------------------------------------------------------------
 
 def canonical(obj: dict) -> bytes:
-    """Deterministic bytes for signing (RFC 8785 JCS compatible subset)."""
+    """Deterministic bytes for signing (RFC 8785 JCS compatible subset).
+
+    Canon version 1. Sorted keys, stripped whitespace, UTF-8, but floats use
+    Python's repr, which is not what RFC 8785 mandates (`1.0` where JCS says
+    `1`, `1e-07` where JCS says `1e-7`). Every chain written before v1.3.1 is
+    version 1 and still verifies. Use `canonical_jcs` for anything a verifier
+    outside Python must reproduce.
+    """
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+CANON_PY = 1
+CANON_JCS = 2
+CANON_VERSIONS = (CANON_PY, CANON_JCS)
+
+
+def _jcs_number(value: float) -> str:
+    """Serialize a float exactly as ECMAScript Number::toString does (RFC 8785 §3.2.2.3).
+
+    This is the whole reason version 2 exists: a manifest full of newton-metres
+    and a receipt full of millisecond percentiles has to hash to the same bytes
+    in Python, Rust and JavaScript, or an offline verifier reports tampering on
+    an untouched episode.
+    """
+    if not math.isfinite(value):
+        raise ValueError("RFC 8785 forbids NaN and Infinity")
+    if value == 0.0:
+        return "0"
+    negative = value < 0
+    _sign, digit_tuple, exponent = Decimal(repr(abs(float(value)))).as_tuple()
+    digits = list(digit_tuple)
+    while len(digits) > 1 and digits[-1] == 0:
+        digits.pop()
+        exponent += 1
+    text = "".join(str(d) for d in digits)
+    k = len(digits)
+    n = k + exponent
+    if k <= n <= 21:
+        rendered = text + "0" * (n - k)
+    elif 0 < n <= 21:
+        rendered = text[:n] + "." + text[n:]
+    elif -6 < n <= 0:
+        rendered = "0." + "0" * (-n) + text
+    else:
+        exp = n - 1
+        mantissa = text if k == 1 else text[0] + "." + text[1:]
+        rendered = mantissa + "e" + ("+" if exp >= 0 else "-") + str(abs(exp))
+    return "-" + rendered if negative else rendered
+
+
+def _jcs_write(value: object, out: list[str]) -> None:
+    if value is None:
+        out.append("null")
+    elif value is True:
+        out.append("true")
+    elif value is False:
+        out.append("false")
+    elif isinstance(value, str):
+        out.append(json.dumps(value, ensure_ascii=False))
+    elif isinstance(value, int):
+        out.append(str(value))
+    elif isinstance(value, float):
+        out.append(_jcs_number(value))
+    elif isinstance(value, dict):
+        out.append("{")
+        for index, key in enumerate(sorted(value)):
+            if not isinstance(key, str):
+                raise TypeError("JCS object keys must be strings")
+            if index:
+                out.append(",")
+            out.append(json.dumps(key, ensure_ascii=False))
+            out.append(":")
+            _jcs_write(value[key], out)
+        out.append("}")
+    elif isinstance(value, (list, tuple)):
+        out.append("[")
+        for index, item in enumerate(value):
+            if index:
+                out.append(",")
+            _jcs_write(item, out)
+        out.append("]")
+    else:
+        raise TypeError(f"JCS cannot serialize {type(value).__name__}")
+
+
+def canonical_jcs(obj: object) -> bytes:
+    """Deterministic bytes per RFC 8785 (canon version 2), reproducible outside Python."""
+    out: list[str] = []
+    _jcs_write(obj, out)
+    return "".join(out).encode("utf-8")
+
+
+def digest(canon_version: int, obj: dict) -> str:
+    """SHA-256 of `obj` under a named canonical version. Unknown versions fail closed."""
+    if canon_version == CANON_PY:
+        payload = canonical(obj)
+    elif canon_version == CANON_JCS:
+        payload = canonical_jcs(obj)
+    else:
+        raise ValueError(f"unknown canonical version: {canon_version}")
+    return hashlib.sha256(payload).hexdigest()
 
 
 class Signer:
@@ -666,13 +767,28 @@ GENESIS = "0" * 64
 
 
 class Ledger:
-    """Append-only hash chain. Each entry commits to the one before it."""
+    """Append-only hash chain. Each entry commits to the one before it.
 
-    def __init__(self) -> None:
+    `canon` selects the canonical form for entries this ledger writes. An entry
+    records `canon` only when it is not version 1, so every chain written before
+    v1.3.1 hashes byte for byte as it always did and still verifies unchanged.
+    """
+
+    def __init__(self, canon: int = CANON_PY) -> None:
+        if canon not in CANON_VERSIONS:
+            raise ValueError(f"unknown canonical version: {canon}")
+        self.canon = canon
         self.entries: list[dict] = []
 
     def _head(self) -> str:
         return self.entries[-1]["hash"] if self.entries else GENESIS
+
+    def _seal(self, body: dict) -> dict:
+        if self.canon != CANON_PY:
+            body["canon"] = self.canon
+        body["hash"] = digest(self.canon, body)
+        self.entries.append(body)
+        return body
 
     def append(
         self,
@@ -701,9 +817,7 @@ class Ledger:
         for key, value in (extra or {}).items():
             if key not in body:
                 body[key] = value
-        body["hash"] = hashlib.sha256(canonical(body)).hexdigest()
-        self.entries.append(body)
-        return body
+        return self._seal(body)
 
     def append_event(
         self,
@@ -731,9 +845,7 @@ class Ledger:
             "extra": extra or {},
             "prev": self._head(),
         }
-        body["hash"] = hashlib.sha256(canonical(body)).hexdigest()
-        self.entries.append(body)
-        return body
+        return self._seal(body)
 
     def count_exceptions_in_window(self, node: str, now: float, window_hours: float = 24.0) -> int:
         """Count valid emergency-declared actions (excluding forged/out-of-scope FORBIDDEN spam)
@@ -754,7 +866,11 @@ class Ledger:
             if e["prev"] != prev:
                 return False, i
             body = {k: v for k, v in e.items() if k != "hash"}
-            if hashlib.sha256(canonical(body)).hexdigest() != e["hash"]:
+            try:
+                recomputed = digest(int(e.get("canon", CANON_PY)), body)
+            except (ValueError, TypeError):
+                return False, i
+            if recomputed != e["hash"]:
                 return False, i
             prev = e["hash"]
         return True, len(self.entries)

@@ -35,10 +35,18 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
-from lokahi import Approval, Manifest, Signer, canonical, compute_action_digest
+from lokahi import (
+    CANON_PY,
+    Approval,
+    Manifest,
+    Signer,
+    canonical,
+    compute_action_digest,
+    digest,
+)
 
 EVIDENCE_FORMAT = "lokahi-evidence/1"
-LEDGER_ALGORITHM = "sha256(canonical-json(entry without hash))"
+LEDGER_ALGORITHM = "sha256(canonical-version(entry without hash))"
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +55,7 @@ LEDGER_ALGORITHM = "sha256(canonical-json(entry without hash))"
 
 def _entry_hash(entry: dict) -> str:
     body = {k: v for k, v in entry.items() if k != "hash"}
-    return hashlib.sha256(canonical(body)).hexdigest()
+    return digest(int(entry.get("canon", CANON_PY)), body)
 
 
 def find_entry(entries: Iterable[dict], seq: int) -> dict:
