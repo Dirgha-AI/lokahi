@@ -1,11 +1,67 @@
 # Changelog
 
-## Unreleased (2026-11-23): audit remediation
+Newest first. Version numbers are monotonic, so a gap in this list means nothing
+was ever tagged with that number. Every entry states what the release does
+**not** do, because that is the part an auditor reads first.
 
-Findings of record for this round are in
+## v1.3.1 (2026-11-26): canonical versioning and an honest record
+
+A release with no new capability, for one reason: three claims in this
+repository were true of the code and false of the record. Nothing here changes a
+decision.
+
+### Added
+
+- **Canonical version 2 (RFC 8785).** `canonical_jcs()` serializes floats the way
+  ECMAScript's `Number::toString` does, so a document hashes to the same bytes in
+  Python, Rust and JavaScript. The version 1 serializer emitted `1.0` where JCS
+  mandates `1`, `1e-07` where JCS mandates `1e-7`, and `-0.0` where JCS mandates
+  `0` — invisible in manifests made of strings and integers, and fatal in a
+  physical manifest made of newtons, newton-metres, rad/s and milliseconds,
+  because an offline verifier in another language would report tampering on an
+  untouched episode.
+- **`digest(canon_version, obj)`** — one hashing entry point. An unknown version
+  raises rather than silently picking one.
+- **`Ledger(canon=...)`** writes version 2 entries, which declare `canon: 2` in
+  the entry itself. Version 1 entries carry no such field and hash byte for byte
+  as they always did, so every existing chain still verifies unchanged.
+- **`tests/test_canonical_jcs.py`** — 44 tests: RFC 8785 Appendix B bit patterns,
+  the documented version 1 divergences, non-finite rejection, non-string keys,
+  version dispatch in the evidence verifier, and one-byte tamper detection on a
+  version 2 chain.
+
+### Fixed
+
+- `lokahi_evidence._entry_hash()` always hashed with canonical version 1, so a
+  version 2 chain would have failed evidence verification while its own
+  `Ledger.verify()` passed. It now dispatches on the entry's declared version,
+  and an unreadable version is a verification failure rather than a crash.
+- `tools/lokahi.py` reported `__version__ = "1.3.0"`; now `1.3.1`, matching
+  `pyproject.toml`.
+- `CHANGELOG.md` was not a sequence: v1.1.0 sat between two 2026-11-23 entries
+  and v1.2.0 was missing entirely. Reordered; v1.2.0 is recorded as never
+  released instead of being silently renumbered.
+- `ROADMAP.md` promised R1 → v1.1, R2 → v1.2, R3 → v2.0 while v1.3.0 had already
+  shipped R1 content, and carried no status for any task. Rewritten with a
+  version ledger, a status column justified by a named test or file, the
+  underwriting workstream (W11), and physical safety pulled forward from R3 to
+  v1.4–v1.5.
+
+### Not done
+
+- **Signing, approval and action digests still use canonical version 1.** They
+  are Python-to-Python, and moving them would invalidate every issued manifest
+  for no present benefit. They move only if a non-Python verifier needs to
+  reproduce them, which is v1.4.0's decision.
+- **`v1.2.0` was never tagged.** Its planned contents shipped under v1.3.0.
+- The Arniko ↔ LOKAHI contract direction is still unpinned; tracked as V-02.
+
+#### Included from the 2026-11-23 audit remediation
+
+Findings of record for that round are in
 [`AUDIT_FINDINGS_2026-11-23.md`](AUDIT_FINDINGS_2026-11-23.md).
 
-### History
+#### History
 
 - Internal strategy material (`STRATEGY.md`, `DEVELOPMENT_DIRECTION.md`) was
   removed from the published history of `main`, `release/v1.3.0` and tags
@@ -13,7 +69,7 @@ Findings of record for this round are in
   Consequence: the `v1.3.0` tag no longer matches the commit SHA recorded in
   the PyPI 1.3.0 provenance attestation.
 
-### Fixed
+#### Fixed
 
 - `docs/CONCEPTS.md` described the ledger as BLAKE3 hash-chained. The
   implementation has always used SHA-256 (`Ledger.append`, `verify`).
@@ -23,6 +79,34 @@ Findings of record for this round are in
   compared two full receipts including their `ts` seconds, so it failed
   whenever the two CLI runs landed in different seconds.
 - Dangling `STRATEGY.md` references in `AUDIT_TASKS.md` and this file.
+
+## v1.3.0 (2026-11-23): Enterprise RBAC, Named Consent Groups, and Approval Protocol
+
+- **R1-06 approval status protocol**: MCP error data now carries `_meta.approval_status`
+  (`pending`, `approved`, `timed_out`, `refused`, or `not_requested`). When human
+  consent is required, `input_required: true` is set, allowing AI clients (like Dirgha)
+  to pause and prompt the user rather than treating human escalation as a hard failure.
+- **R1-09 local RBAC**: configured `steward`, `operator`, and `auditor` roles are
+  enforced across tool invocation, approval ingestion, and quorum counting. Auditors
+  cannot invoke tools or ingest approvals; operators can invoke tools per ACL but
+  cannot approve; stewards can approve and satisfy quorums.
+- **R1-11 named consent groups**: validator config can carry group membership
+  (`lokahi_sign.py keygen --group ...`) or use `--operator-groups`. Quorums strictly
+  count only operators registered in that named group and match signed manifest `n`,
+  preventing validator dilution.
+- **Telemetry race condition fix**: `Telemetry.flush()` now checks `_queue.unfinished_tasks == 0`
+  instead of `_queue.empty()`, guaranteeing that all asynchronous fan-out events are
+  delivered to sinks before `flush()` returns.
+- **50-scenario red-team benchmark parity**: 100% of the 50 adversarial evasion scenarios
+  in `data/LOKAHI_RedTeam_Corpus_v1.0.csv` intercepted with 0.0% false positives on 200 benign calls.
+
+## v1.2.0 — never released
+
+No tag and no release carries this number. The work planned for it — enterprise
+RBAC, named consent groups, and the approval-status protocol — shipped under
+v1.3.0. It is recorded here so the version list reads as a history rather than a
+guess, and so a future release does not quietly claim a number that never
+existed.
 
 ## v1.1.0 (2026-11-20): parity release
 
@@ -89,27 +173,7 @@ Findings of record for this round are in
 - **Docs**: `docs/QUICKSTART.md`, `docs/CONCEPTS.md`,
   `docs/ENTERPRISE_RFP.md` (60-point honest self-assessment).
 
-## v1.3.0 (2026-11-23): Enterprise RBAC, Named Consent Groups, and Approval Protocol
-
-- **R1-06 approval status protocol**: MCP error data now carries `_meta.approval_status`
-  (`pending`, `approved`, `timed_out`, `refused`, or `not_requested`). When human
-  consent is required, `input_required: true` is set, allowing AI clients (like Dirgha)
-  to pause and prompt the user rather than treating human escalation as a hard failure.
-- **R1-09 local RBAC**: configured `steward`, `operator`, and `auditor` roles are
-  enforced across tool invocation, approval ingestion, and quorum counting. Auditors
-  cannot invoke tools or ingest approvals; operators can invoke tools per ACL but
-  cannot approve; stewards can approve and satisfy quorums.
-- **R1-11 named consent groups**: validator config can carry group membership
-  (`lokahi_sign.py keygen --group ...`) or use `--operator-groups`. Quorums strictly
-  count only operators registered in that named group and match signed manifest `n`,
-  preventing validator dilution.
-- **Telemetry race condition fix**: `Telemetry.flush()` now checks `_queue.unfinished_tasks == 0`
-  instead of `_queue.empty()`, guaranteeing that all asynchronous fan-out events are
-  delivered to sinks before `flush()` returns.
-- **50-scenario red-team benchmark parity**: 100% of the 50 adversarial evasion scenarios
-  in `data/LOKAHI_RedTeam_Corpus_v1.0.csv` intercepted with 0.0% false positives on 200 benign calls.
-
-## Unreleased — planning
+## Planning record (undated)
 
 - **`ROADMAP.md`** — phased plan to open-source SOTA: competitive parity matrix
   across 12 vendors, 10 workstreams, releases R0–R4 with acceptance criteria,
