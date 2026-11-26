@@ -50,6 +50,37 @@ pass straight through an obstacle with both of its endpoints legal.
   gate's limits. The field is carried only when set, so existing manifests keep
   their canonical bytes.
 
+### Measured, and what it does not show
+
+Two harnesses, both with their commands in `docs/BENCHMARKS.md`.
+
+- Adversarial and latency: 0 of 120 adversarial executions reach the actuator
+  against 94 of 120 ungated, at a 0% false-clamp rate on benign chunks. Latency
+  columns from this device are noise and are not published.
+- Safety-Gymnasium, 3 seeds, 1000 steps: SafetyCarGoal1 cost 92.7 -> 45.3 per
+  episode, at a real price — the gated car earns -0.072 reward against 2.547, and
+  467 of 619 refusals were steps the environment would not have charged for.
+  SafetyPointGoal1 regressed 38.3 -> 79.3 and SafetyButton1 regressed 19.3 ->
+  227.3, whose cause is that the task's moving hazards are never given to the gate.
+
+A published claim that LOKAHI reduces constraint violations is therefore **not
+supported by this release**. The harness is real, the numbers are real, and they
+are mixed. The causes are named as D-1 to D-4 in `HANDOVER.md`: keep-outs are
+modelled as bounding boxes while the suite charges on discs (over-refusal),
+dynamic hazards are not modelled at all, and the ungated arm has too little
+headroom on two tasks for a difference to be measurable.
+
+### Fixed during the benchmark
+
+The earlier version of this release trapped a robot inside a hazard: refusing any
+segment that started inside a keep-out box meant a policy that drifted in could
+never be commanded out, and the environment charged it for every step it stayed.
+On SafetyPointGoal1 that was 319 cost per episode against 38 ungated. The gate now
+measures how badly a constraint is already violated and, when the robot starts in
+violation, accepts a chunk whose end pose is no worse. Six tests cover escape,
+deeper-entry refusal, a non-latching refusal, and that a clean start still refuses
+entry.
+
 ### Not done
 
 - The ROS 2 adapter is tested against hand-recorded fixtures only. Nothing in this

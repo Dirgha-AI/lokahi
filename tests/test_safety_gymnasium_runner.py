@@ -31,10 +31,12 @@ sys.path.insert(0, ROOT)
 from benchmarks.safety_gymnasium_runner import (  # noqa: E402
     STALL_STEPS,
     Geometry,
+    arena_is_enclosed,
     UnmeasurableEnvironment,
     action_is_legal,
     format_table,
     run_benchmark,
+    retreat_command,
     run_episode,
     step_once,
 )
@@ -462,3 +464,29 @@ def test_real_benchmark_runs_both_arms_on_the_suite():
     assert row["gated"]["steps"] > 0
     assert row["gated"]["intervention_rate"] > 0.0
     assert row["gated"]["refusals_on_legal_actions"] <= row["gated"]["refusals"]
+
+
+# ---------------------------------------------------------------------------
+# the pieces the car needed
+# ---------------------------------------------------------------------------
+
+def test_retreat_command_undoes_the_last_step():
+    assert retreat_command(STUB_GEOMETRY, (0.1, 0.0)) == [-1.0, 0.0]
+    assert retreat_command(STUB_GEOMETRY, (0.0, -0.1)) == [0.0, 1.0]
+    # A car cannot undo a step with a direction: it has to brake.
+    car = STUB_GEOMETRY._replace(motion="car", action_low=(-1.0, -1.0), action_high=(1.0, 1.0))
+    assert retreat_command(car, (0.05, 0.0)) == [0.0, -1.0]
+    # A robot that has not moved has nothing to retreat from.
+    assert retreat_command(STUB_GEOMETRY, None) == [0.0, 0.0]
+
+
+def test_a_wall_less_arena_is_not_handed_to_the_gate_as_a_keep_in_box():
+    class OpenArena(StubSafetyEnv):
+        def step(self, action):
+            self.x = self.x + STEP_SCALE_M * float(action[0])
+            self.y = self.y + STEP_SCALE_M * float(action[1])
+            self.steps += 1
+            return [self.x, self.y], 0.0, 0.0, False, self.steps >= HORIZON, {}
+
+    assert arena_is_enclosed(StubSafetyEnv(), ARENA) is True
+    assert arena_is_enclosed(OpenArena(), ARENA) is False

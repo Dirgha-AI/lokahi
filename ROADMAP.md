@@ -282,6 +282,12 @@ measure of what "enterprise-ready" meant when v1.1.0 shipped.
 | V-11 | PLC hold driver (OPC UA / Modbus) | W5 | v1.5.0 | a real PLC accepts the hold and reports it |
 | V-12 | ROS 2 interlock node in Rust, tested against recorded fixtures | W5 | v1.5.0 | fixture replay in CI; no live rclpy required |
 | V-13 | Reference architecture + non-claim statement | W5 | v1.5.0 | names the safety-rated controller and LOKAHI's position outside it |
+| V-14 | Circle and cylinder keep-out shapes | W5 | v1.4.0-rc2 | false-clamp count falls and the Car cost reduction survives |
+| V-15 | Per-step dynamic keep-outs, capped by the manifest | W5 | v1.4.0-rc2 | Button cost falls; receipt records the caller as the source |
+| V-16 | Bench driver with real violation headroom | W11 | v1.4.0-rc2 | ungated arm has non-trivial cost on all three tasks |
+| V-17 | Per-obstacle attribution in the harness | W11 | v1.4.0-rc2 | every charged step names the hazard that caused it |
+| V-18 | `safe-control-gym` filter comparison | W11 | v1.4.1 | LOKAHI in the MPSC/CBF column, same seeds and horizon |
+| V-19 | Implement or remove `execution_mode` | W5 | v1.4.0-rc2 | behaviour differs per mode and is tested, or the field is gone |
 
 ### Deferred, with the reason
 

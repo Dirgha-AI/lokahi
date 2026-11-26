@@ -290,7 +290,7 @@ py -3 benchmarks/vla_lag_and_safety_bench.py --json   # machine-readable
 
 Of 120 adversarial executions, 0 reach the actuator with the gate in line, against 94 of 120 ungated. The false-clamp rate on benign chunks is 0%. The latency columns in that table are only meaningful on a quiet machine — the figures quoted here are the safety counts, and timing on a loaded box is noise, so none of it is published as a latency claim.
 
-A Safety-Gymnasium runner (`benchmarks/safety_gymnasium_runner.py`) is in progress and not yet in this tree; its table is unpublished, so its absence here is not a result either way.
+The Safety-Gymnasium runner (`benchmarks/safety_gymnasium_runner.py`) is in the tree and its results are published in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) — including the part that does not flatter us: one task improves 51% on constraint cost at a cost in task progress and 467 over-refusals, and two tasks regress. The cause of the over-refusal is named there, and the document states plainly that a claim of "LOKAHI reduces constraint violations" is not yet supported by the table.
 
 These numbers are simulation only: no hardware, no cell, no certification. The ["What this is not"](docs/LOKAHI_VLA.md#what-this-is-not) section of the gate document says what they do not prove.
 

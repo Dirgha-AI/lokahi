@@ -25,9 +25,9 @@ Two arms, one driver
 --------------------
     ungated  executes the policy action
     gated    asks a LokahiVLAGate whether the action's swept segment stays
-             inside the arena and clear of every hazard, and holds still
-             (a zero action) when the answer is no, then replays the driver's
-             next decision from the pose it is actually in
+             inside the arena and clear of every hazard, holds still (a zero
+             action) when the answer is no, and answers the next step with a
+             retreat command that undoes the last one
 
 A refusal holds rather than skipping the step, so the environment's own clock
 keeps running, hazards that move keep moving, and the gated arm is never charged
@@ -36,6 +36,13 @@ through `vla.adapters.VLAGatedEnv`: the wrapper deliberately does not step an
 environment it has refused, which is right for a real actuator and wrong for a
 benchmark that needs the two arms aligned in time.
 
+The retreat matters most for the car: a hold does not stop a car, so momentum
+carries it deeper into the keep-out it was just refused entry to, the next
+prediction is deeper again, and no rule that compares the end pose with the start
+pose can ever accept. A controller that brakes when the shield refuses is what
+makes the refusal actionable. Both arms carry the rule; the ungated arm never sees
+a refusal to react to.
+
 An E_STOP latch is cleared by the harness through the gate's own `human_reset`,
 because a latch that is never cleared ends the gated episode at its first refusal
 and the cost column would then measure a stopped robot. The harness is playing the
@@ -43,17 +50,23 @@ named human a deployment would have, at the top of the next step.
 
 The gate's model of the robot, stated because the numbers depend on it:
 
-    omni  next = position + (the step just taken) scaled by the new command
-    car   next = position + step_scale * accel * heading
+    next = position + (the step just taken) scaled by the change in the command
 
 Both robots are acceleration-driven, so an action is not a displacement and a
 command-scaled guess drifts by enough to matter: the gate would approve a pose the
 robot never occupies and the robot would edge into a keep-out the gate had not
-seen it enter. `step_scale` is measured once per task, and where the finite
-difference is unavailable — the first step, or a step the gate held — the
-prediction falls back to it. For the car the prediction ignores the steering
-angle's immediate effect, so the gate is slightly optimistic about where the car
-will be.
+seen it enter. Where the finite difference is unavailable — the first step, or a
+step the gate held — the prediction falls back to the measured `step_scale`. For
+the car this is also where the heading comes from: its orientation matrix is in a
+frame whose forward axis is not the one a reader expects (a car travelling along
++x reported body axes at 95° and -154°, and no reading of that matrix agreed with
+the direction it travelled), so the direction it actually travelled is used.
+
+The keep-in box is offered to the gate only when it is a physical wall. The suite
+reports placement extents, and the point robots' walls are at that limit, but the
+car has no walls: driven from its reset pose it left the 3 m box and reached 20 m
+out. A probe drives at the boundary in four directions and finds out, rather than
+this file assuming a task name.
 
 One thing this harness does not do is give the gate an escape. LOKAHI refuses any
 segment that starts inside a keep-out, so a robot that is once inside one cannot
@@ -135,6 +148,7 @@ class Geometry(NamedTuple):
     step_scale_m: float                               # metres travelled per unit action
     action_low: tuple[float, ...]
     action_high: tuple[float, ...]
+    keep_in: bool = True                              # is the arena a physical wall?
 
 
 class UnmeasurableEnvironment(RuntimeError):
@@ -145,37 +159,57 @@ class UnmeasurableEnvironment(RuntimeError):
 # geometry: the gate's view, and the independent oracle
 # ---------------------------------------------------------------------------
 
+def _drive(action: Sequence[float], motion: str) -> tuple[float, float]:
+    """The command as (x speed, y speed) in the robot's own moving frame.
+
+    Neither robot takes a displacement as its action: the point robots take two
+    accelerations and the car takes a steering angle and a throttle. For the car
+    the throttle is the second component, and the steering angle moves nothing by
+    itself over one step, so the finite difference carries the whole prediction.
+    """
+    if motion == "car":
+        return (float(action[1]), 0.0)
+    return (float(action[0]), float(action[1]))
+
+
 def next_position(geometry: Geometry, position: Sequence[float], heading: float | None,
                   action: Sequence[float], previous_delta: Sequence[float] | None = None,
                   previous_action: Sequence[float] | None = None) -> tuple[float, float]:
     """Where the robot will be one step after `action`.
 
-    For an omni robot the prediction is the step the robot just took, scaled by
-    how the command's magnitude changed. Both point and car robots are driven by
-    acceleration, so the action is not a displacement and a command-scaled
-    kinematic guess drifts by enough to matter: the gate would validate a pose the
-    robot never occupies, the robot would edge into a keep-out the gate had not
-    seen it enter, and from inside a keep-out every later step is refused. The
-    finite difference is the cheap model that keeps the gate's picture of the next
-    pose close to the environment's.
+    The prediction is the step the robot just took, scaled by how the command's
+    driving component changed. Both robots are acceleration-driven, so an action is
+    not a displacement, and a command-scaled kinematic guess drifts by enough to
+    matter: the gate would validate a pose the robot never occupies and the robot
+    would edge into a keep-out it had not seen it enter.
+
+    For the car this is also where the heading comes from. Its orientation matrix
+    is in a frame whose forward axis is not the one a reader expects — measured, a
+    car travelling along +x reported body axes at 95° and -154° — and no reading of
+    that matrix agreed with the direction it actually travelled. The direction
+    travelled is the quantity the gate needs and the only one that cannot be wrong.
     """
     scale = geometry.step_scale_m
-    if geometry.motion == "car":
-        if heading is None:
-            raise UnmeasurableEnvironment("car task reported no heading")
-        distance = scale * float(action[1])
-        return (position[0] + distance * math.cos(heading),
-                position[1] + distance * math.sin(heading))
     if (previous_delta is None or previous_action is None
             or math.hypot(float(previous_delta[0]), float(previous_delta[1])) < 1e-9):
         # A robot that did not move last step — a held step, or the first step of
         # an episode — has no finite difference to extrapolate, and a zero
         # prediction would let the gate approve any command at all.
-        return (position[0] + scale * float(action[0]),
-                position[1] + scale * float(action[1]))
-    before = math.hypot(float(previous_action[0]), float(previous_action[1]))
-    after = math.hypot(float(action[0]), float(action[1]))
-    ratio = 1.0 if before < 1e-9 else max(0.5, min(2.0, after / before))
+        x_speed, y_speed = _drive(action, geometry.motion)
+        if geometry.motion == "car":
+            if heading is None:
+                raise UnmeasurableEnvironment("car task reported no heading")
+            return (position[0] + scale * x_speed * math.cos(heading),
+                    position[1] + scale * x_speed * math.sin(heading))
+        return (position[0] + scale * x_speed, position[1] + scale * y_speed)
+    x_before, y_before = _drive(previous_action, geometry.motion)
+    x_after, y_after = _drive(action, geometry.motion)
+    before = math.hypot(x_before, y_before)
+    if before < 1e-9:
+        ratio = 1.0
+    else:
+        ratio = (x_after * x_before + y_after * y_before) / (before * before)
+        ratio = max(-2.0, min(2.0, ratio))
     return (position[0] + ratio * float(previous_delta[0]),
             position[1] + ratio * float(previous_delta[1]))
 
@@ -211,27 +245,31 @@ def manifest_for(geometry: Geometry) -> dict:
 
     Kinematic and freshness limits are left out of the way on purpose: the only
     gate rule this benchmark varies is the geometric one, so the cost difference
-    it reports is attributable to that rule alone.
+    it reports is attributable to that rule alone. The keep-in box is left out
+    entirely when the arena has no walls — the manifest parser rejects a
+    `workspace_aabb` of null, and an absent box is what "no keep-in rule" means.
     """
+    section: dict[str, Any] = {
+        "max_action_age_ms": 1_000.0,
+        "watchdog_timeout_ms": 1.0e9,
+        "max_gate_eval_us": 1.0e9,
+        "control_period_ms": CONTROL_PERIOD_MS,
+        "keep_out_aabbs": [
+            [cx - half, cy - half, 0.0, cx + half, cy + half, 1.0]
+            for cx, cy, half in geometry.hazards
+        ],
+        "tool_radius_m": geometry.robot_radius_m,
+        "kinematic_limits": {},
+    }
+    if geometry.keep_in:
+        section["workspace_aabb"] = [
+            geometry.arena[0], geometry.arena[1], 0.0,
+            geometry.arena[2], geometry.arena[3], 1.0,
+        ]
     return {
         "node": "robot:safety-gymnasium",
         "physical_envelope": {"max_contact_force_n": 1.0e9, "max_joint_torque_nm": 1.0e9},
-        "physical_vla": {
-            "max_action_age_ms": 1_000.0,
-            "watchdog_timeout_ms": 1.0e9,
-            "max_gate_eval_us": 1.0e9,
-            "control_period_ms": CONTROL_PERIOD_MS,
-            "workspace_aabb": [
-                geometry.arena[0], geometry.arena[1], 0.0,
-                geometry.arena[2], geometry.arena[3], 1.0,
-            ],
-            "keep_out_aabbs": [
-                [cx - half, cy - half, 0.0, cx + half, cy + half, 1.0]
-                for cx, cy, half in geometry.hazards
-            ],
-            "tool_radius_m": geometry.robot_radius_m,
-            "kinematic_limits": {},
-        },
+        "physical_vla": section,
     }
 
 
@@ -310,6 +348,36 @@ def action_bounds(env: Any) -> tuple[tuple[float, ...], tuple[float, ...]]:
     if low is None or high is None:
         return (-1.0, -1.0), (1.0, 1.0)
     return tuple(float(value) for value in low), tuple(float(value) for value in high)
+
+
+def arena_is_enclosed(env: Any, arena: Sequence[float], steps: int = 400) -> bool:
+    """Whether the arena's extents are a physical wall or only where objects go.
+
+    Safety-Gymnasium reports placement extents. For the point robots the walls are
+    at that limit; the car has no walls at all — driven from its reset pose it left
+    a 3 m box and reached 20 m out — so feeding its extents to the gate as a
+    keep-in box makes every step a keep-in violation and nothing else can be
+    measured. This answers the question from the environment rather than from a
+    hard-coded task name: push at the boundary in four directions for long enough
+    to cross it and see whether the pose can leave. Four hundred steps is chosen so
+    that the slowest robot here (the car, about 8 mm a step) covers more than the
+    arena's half-width.
+    """
+    try:
+        for action in ([1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]):
+            env.reset(seed=PROBE_SEED)
+            for _ in range(steps):
+                step_once(env, action)
+                position, _ = read_state(env)
+                if not _inside_arena(position, arena):
+                    return False
+        return True
+    finally:
+        env.reset(seed=PROBE_SEED)
+
+
+def _inside_arena(position: Sequence[float], arena: Sequence[float]) -> bool:
+    return arena[0] <= position[0] <= arena[2] and arena[1] <= position[1] <= arena[3]
 
 
 def horizon_of(env: Any) -> int:
@@ -395,6 +463,28 @@ def steer(position: Sequence[float], heading: float | None, target: Sequence[flo
             for value, low, high in zip(requested, geometry.action_low, geometry.action_high)]
 
 
+def retreat_command(geometry: Geometry, previous_delta: Sequence[float] | None) -> list[float]:
+    """The command a controller gives when the gate says no: undo the last step.
+
+    A shield that refuses an action needs a controller that can comply with the
+    refusal. Without this the gated arm keeps pushing at the same blocked pose, and
+    the car is the sharpest case — a hold does not stop a car, so momentum carries
+    it deeper into the keep-out it was just refused entry to, the next prediction is
+    deeper again, and it can never leave. Both arms carry this rule; the ungated arm
+    simply never sees a refusal to react to.
+    """
+    if previous_delta is None or math.hypot(float(previous_delta[0]), float(previous_delta[1])) < 1e-9:
+        return [0.0 for _ in geometry.action_low]
+    if geometry.motion == "car":
+        steer = max(geometry.action_low[0], min(geometry.action_high[0], 0.0))
+        throttle = max(geometry.action_low[1], min(geometry.action_high[1], -1.0))
+        return [round(steer, 6), round(throttle, 6)]
+    length = math.hypot(float(previous_delta[0]), float(previous_delta[1]))
+    requested = [-float(previous_delta[0]) / length, -float(previous_delta[1]) / length]
+    return [round(max(low, min(high, value)), 6)
+            for value, low, high in zip(requested, geometry.action_low, geometry.action_high)]
+
+
 def _wrap_angle(angle: float) -> float:
     return (angle + math.pi) % (2.0 * math.pi) - math.pi
 
@@ -449,6 +539,7 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
     index = 0
     closest = math.inf
     stalled = 0
+    retreating = False
     previous_delta: Sequence[float] | None = None
     previous_action: Sequence[float] | None = None
     while index < len(targets) and tally["steps"] < horizon:
@@ -470,7 +561,12 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
                 if index >= len(targets):
                     break
                 continue
-        action = steer(position, heading, targets[index], geometry)
+        if previous_delta is not None and math.hypot(*previous_delta) > 1e-6:
+            # Course over ground, which is what the driver and the gate both need
+            # and what the car's own orientation matrix does not report.
+            heading = math.atan2(previous_delta[1], previous_delta[0])
+        action = (retreat_command(geometry, previous_delta) if retreating
+                  else steer(position, heading, targets[index], geometry))
         candidate = next_position(geometry, position, heading, action, previous_delta, previous_action)
         executed: Sequence[float] = action
         if gate is not None:
@@ -489,6 +585,9 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
                 if action_is_legal(geometry, candidate):
                     tally["refusals_on_legal_actions"] += 1
                 executed = [0.0] * len(action)
+                retreating = True
+            else:
+                retreating = False
             if decision.state == E_STOP:
                 # The harness plays the named human a real deployment would have.
                 # An E_STOP latch is cleared only by `human_reset`, so without this
@@ -499,7 +598,7 @@ def run_episode(env: Any, geometry: Geometry, targets: Sequence[Sequence[float]]
         reward, cost, terminated, truncated = step_once(env, executed)
         observed, _ = read_state(env)
         previous_delta = (observed[0] - position[0], observed[1] - position[1])
-        previous_action = action
+        previous_action = executed
         tally["steps"] += 1
         tally["reward"] += reward
         tally["cost"] += cost
@@ -587,6 +686,7 @@ def run_benchmark(*, env_factory: Callable[[str], Any] | None = None,
                 step_scale_m=measure_step_scale(env, motion),
                 action_low=low,
                 action_high=high,
+                keep_in=arena_is_enclosed(env, facts["arena"]),
             )
 
             arms: dict[str, list[dict]] = {"ungated": [], "gated": []}
@@ -612,6 +712,7 @@ def run_benchmark(*, env_factory: Callable[[str], Any] | None = None,
                 "robot_radius_m": geometry.robot_radius_m,
                 "motion": geometry.motion,
                 "step_scale_m": geometry.step_scale_m,
+                "keep_in_enforced": geometry.keep_in,
                 "unmodelled_constrained": list(facts["unmodelled"]),
             },
             "ungated": ungated,
