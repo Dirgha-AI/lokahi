@@ -59,7 +59,7 @@ lokahi-vla-verify = "lokahi.vla.rollout_receipt:main"
 
 [tool.setuptools]
 package-dir = {"lokahi" = "tools"}
-packages = ["lokahi", "lokahi.decisions", "lokahi.vla"]
+packages = ["lokahi", "lokahi.decisions", "lokahi.vla", "lokahi.vla.adapters"]
 
 [tool.setuptools.package-data]
 "lokahi.decisions" = ["model.json"]

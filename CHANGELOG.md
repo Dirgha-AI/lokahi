@@ -4,6 +4,65 @@ Newest first. Version numbers are monotonic, so a gap in this list means nothing
 was ever tagged with that number. Every entry states what the release does
 **not** do, because that is the part an auditor reads first.
 
+## v1.4.0 (2026-11-26): VLA runtime safety
+
+A gate for Vision-Language-Action policies, built on the existing engine rather
+than beside it. The two failure modes that matter for a chunked policy are
+staleness and geometry, in that order: a policy that thinks for 300 ms while the
+arm runs at 20 Hz has already executed fifteen stale actions, and a chunk can
+pass straight through an obstacle with both of its endpoints legal.
+
+### Added
+
+- **`lokahi.vla`** — `physical_manifest` extends a signed manifest with only what
+  `physical_envelope` lacks: `max_action_age_ms`, `watchdog_timeout_ms`,
+  `execution_mode`, `keep_out_aabbs`, `tool_radius_m`, per-violation
+  `policy_on_violation`. Restating a force or workspace limit here is refused, so
+  one physical bound keeps one source of truth.
+- **The gate** — nine checks in a fixed cheap-first order: latch, clock,
+  structure, per-element freshness, watchdog, swept geometry, kinematics, wrench,
+  then its own deadline. Keep-in is convex so vertices suffice; keep-out needs the
+  segment-vs-box slab test. States project onto `FailSecureManager`'s
+  `actuator_interlock`; there is no second state machine.
+- **`max_gate_eval_us`** refuses on overrun rather than reporting, reusing the
+  WASM preflight's `budget_exceeded` precedent. It may escalate a state, never
+  soften one.
+- **Signed receipts** — `RolloutReceipt` appends every gated step to a
+  `Ledger(canon=CANON_JCS)` chain and recomputes every summary field from the
+  entries at verification time, so a flipped percentile is caught by someone who
+  only has the JSON. `lokahi-vla-verify` exits 0 intact, 1 tampered, 2 cannot
+  evaluate.
+- **Adapters** — gym, LeRobot chunks and recorded ROS 2 messages, duck-typed, no
+  runtime dependency added.
+- **Benchmark** — `benchmarks/vla_lag_and_safety_bench.py` across latency 0-500 ms
+  and three execution modes. Reports **0 of 120 adversarial executions reaching
+  the actuator, against 94 of 120 ungated**, at a 0% false-clamp rate.
+
+### Fixed during the work
+
+- A kinematic violation clamped to the whole chunk instead of the first offending
+  element, so an over-speed chunk executed in full under a `CLAMPED` verdict.
+- A `robot_state` without `ee_pos` skipped geometry and kinematics and returned
+  `COMPLIANT`. It now refuses with `robot_state_missing_ee_pos`.
+- `max_joint_vel_rad_s` and `max_joint_acc_rad_s2` were validated and stored but
+  never enforced. They now compute against chunk duration.
+- `Manifest.to_dict()` dropped the section, so `Manifest.sign()` never covered the
+  gate's limits. The field is carried only when set, so existing manifests keep
+  their canonical bytes.
+
+### Not done
+
+- The ROS 2 adapter is tested against hand-recorded fixtures only. Nothing in this
+  repository can import `rclpy`, and untested transport code is the kind that fails
+  on the robot.
+- `execution_mode` is validated and stored but changes no behaviour: all three
+  modes gate one chunk per call.
+- `obs_to_action_ms` measures observation to decision, not observation to actuator.
+- No hardware-in-the-loop run, no PLC hold driver, no ISO mapping signed off. Those
+  are v1.5.0.
+- LOKAHI is not a safety-rated control function and cannot be PL d under
+  ISO 13849-1. `docs/LOKAHI_VLA.md` says so in the first screen.
+
 ## v1.3.1 (2026-11-26): canonical versioning and an honest record
 
 A release with no new capability, for one reason: three claims in this
