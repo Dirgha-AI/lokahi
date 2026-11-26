@@ -47,6 +47,10 @@ def manifest():
             "watchdog_timeout_ms": 500.0,
             "control_period_ms": 20.0,
             "execution_mode": "sync",
+            # Generous budget so a loaded machine cannot flip a verdict to
+            # budget_exceeded and fail a test about the receipt. The budget check
+            # has its own test with an impossible deadline in test_vla_gate.py.
+            "max_gate_eval_us": 10_000_000.0,
             "workspace_aabb": [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             "keep_out_aabbs": [],
             "kinematic_limits": {"max_pos_delta_m": 0.25},
