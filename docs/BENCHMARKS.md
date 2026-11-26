@@ -61,32 +61,67 @@ py -3 benchmarks/safety_gymnasium_runner.py --seeds 0 1 2 --keep-out circle   # 
 py -3 benchmarks/safety_gymnasium_runner.py --seeds 0 1 2 --keep-out box
 ```
 
+### Arm A: keep-outs as bounding boxes (`--keep-out box`)
+
 | Task | Arm | Reward / ep | Cost / ep | Charged steps | Intervention | False clamp |
 |---|---|---|---|---|---|---|
 | SafetyPointGoal1-v0 | ungated | −1.260 | 38.3 | 115 | — | — |
-| SafetyPointGoal1-v0 | gated | −2.331 | **79.3** | 238 | 50.6% | 43 |
+| SafetyPointGoal1-v0 | gated | −2.331 | **79.3** | 251 | 50.6% | 43 |
 | SafetyPointButton1-v0 | ungated | −4.440 | 19.3 | 58 | — | — |
 | SafetyPointButton1-v0 | gated | −1.025 | **227.3** | 682 | 20.9% | 10 |
 | SafetyCarGoal1-v0 | ungated | 2.547 | 92.7 | 278 | — | — |
 | SafetyCarGoal1-v0 | gated | −0.072 | **45.3** | 136 | 61.9% | 467 |
 
+### Arm B: keep-outs as discs (`--keep-out circle`, the default)
+
+| Task | Arm | Reward / ep | Cost / ep | Charged steps | Intervention | False clamp |
+|---|---|---|---|---|---|---|
+| SafetyPointGoal1-v0 | ungated | −1.260 | 38.3 | 115 | — | — |
+| SafetyPointGoal1-v0 | gated | 0.069 | **83.7** | 251 | 32.3% | **0** |
+| SafetyPointButton1-v0 | ungated | −4.440 | 19.3 | 58 | — | — |
+| SafetyPointButton1-v0 | gated | −1.269 | **156.0** | 468 | 3.1% | **0** |
+| SafetyCarGoal1-v0 | ungated | 2.547 | 92.7 | 278 | — | — |
+| SafetyCarGoal1-v0 | gated | −0.383 | **154.0** | 462 | 63.8% | **0** |
+
+Same seeds, same driver, same horizon. The only difference between the arms is
+the geometry the gate was given.
+
 ### Reading this honestly
 
-**One task improves, two regress, and the improvement is not clean.**
+**The disc removes over-refusal completely and does not fix the cost.**
 
-SafetyCar is the only reduction: cost per episode 92.7 → 45.3, a 51% cut. It is
-bought at a real price. The gated car earns −0.072 reward where the ungated car
-earns 2.547, so it made less progress, and **467 of its 619 refusals were steps
-the environment would not have charged for** — over-refusal, not precision. The
-cause is named: the harness hands the gate a hazard's bounding *square* while the
-suite charges on the *disc*, and a one-step prediction is conservative for a
-coasting vehicle.
+Over-refusal goes to zero on all three tasks: 43 → 0, 10 → 0 and 467 → 0. Every
+refusal the gate now issues is a step the environment would itself have charged
+for. That is the D-1 acceptance criterion met on its first half — the gate no
+longer stops the robot for no reason, and it is now measuring the world as the
+world is.
 
-SafetyPoint regressed from 38.3 to 79.3 cost per episode at only 50.6%
-interventions, so the gate is not preventing entry there. SafetyButton regressed
-badly, and its explanation is structural rather than mysterious: that task's
-moving hazards are never given to the gate, so most of its charge is from
-obstacles the gate cannot see.
+Cost does not follow. SafetyCar goes from 92.7 ungated to 154.0 gated
+(interventions on 63.8% of steps), SafetyPoint 38.3 → 83.7, SafetyButton 19.3 →
+156.0. Reward moves the other way on Point (−1.260 → 0.069) and slightly down on
+the other two, so the arm is not simply frozen everywhere.
+
+The cause is visible in the shape of the numbers. A refusal is a one-step
+judgement: the gate rejects the step that would end inside a disc, the driver
+re-plans from where it is, that step is refused too, and the robot stands still
+while the environment charges it for standing inside the hazard. 462 of
+SafetyCar's 3,000 gated steps were charged while only 278 of the ungated arm's
+were — the shield converted a moving violation into a stationary one. Precision
+without a recovery path is a robot that stops in the worst place.
+
+That is exactly what the escape-planning work targets: when every forward step
+is refused, the gate has to hand back a setpoint that increases clearance rather
+than a hold.
+
+### What changed as a direct result
+
+An earlier version of the gate scored 319 cost per episode on SafetyPoint
+against 38 ungated. The cause was found in simulation and fixed in
+`tools/vla/vla_gate.py`: the gate refused any segment starting inside a keep-out
+box, so a robot that drifted into a hazard could never be commanded out, and the
+environment charged it for every step it remained. The gate now measures how
+badly a constraint is already violated and, when the robot starts in violation,
+accepts a chunk whose end pose is no worse. Six tests cover it.
 
 ### What changed as a direct result
 
@@ -103,9 +138,10 @@ accepts a chunk whose end pose is no worse. Six tests cover it.
 - Three tasks, three seeds, and a scripted waypoint driver. This measures the
   gate, not any learned policy, and it is not comparable to a published SafeRL
   baseline table.
-- The gate models obstacles as static axis-aligned boxes. Safety-Gymnasium has
-  moving hazards and disc geometry. Both mismatches are visible in the
-  over-refusal column and neither is fixed.
+- The gate models obstacles as static geometry. Disc geometry is now modelled
+  exactly and the over-refusal column is zero, so that mismatch is closed.
+  Moving hazards are still never given to the gate; SafetyButton's charge is
+  still mostly from obstacles it cannot see.
 - No task shows a clean cost reduction at preserved reward. **A published claim
   of "LOKAHI reduces constraint violations" is not supported by this table yet.**
 
@@ -113,12 +149,16 @@ accepts a chunk whose end pose is no worse. Six tests cover it.
 
 ## What would make these publishable
 
-1. Model obstacles as their real geometry — discs and cylinders, not bounding
-   boxes — and re-run. That directly attacks the false-clamp count.
-2. Give the gate the moving hazards, or declare them out of scope explicitly and
+1. ~~Model obstacles as their real geometry — discs and cylinders, not bounding
+   boxes — and re-run.~~ **Done**, see arm B: false clamps 43/10/467 → 0/0/0.
+   The cost did not follow, which is the finding.
+2. Give the gate a recovery path when every forward step is refused. Without it a
+   precise refusal freezes the robot inside the hazard it refused to enter, which
+   is where the remaining cost comes from.
+3. Give the gate the moving hazards, or declare them out of scope explicitly and
    report SafetyButton as unmeasurable rather than bad.
-3. An ungated arm that violates on purpose with enough headroom to measure a
+4. An ungated arm that violates on purpose with enough headroom to measure a
    difference: the current driver avoids hazards too well on Point and Button for
    the comparison to have room.
-4. Only then compare against a published safety-filter baseline, and only across
+5. Only then compare against a published safety-filter baseline, and only across
    the same seeds and horizon.

@@ -96,6 +96,50 @@ the world more coarsely than the world is. Adding the shape the world actually
 has removes the error at its source. Loosening thresholds would have hidden the
 same error and shown better numbers.
 
+**Status: done, measured, and it did not fix the cost.** `keep_out_shapes` now
+accepts `circle`, `cylinder`, `sphere`, `capsule` and `mesh`, with the first four
+checked analytically and the mesh through the optional COAL extra. The harness
+gained `--keep-out {circle,box}` so both arms are reproducible. Across seeds
+0,1,2:
+
+| Task | False clamps, box | False clamps, disc |
+|---|---|---|
+| SafetyPointGoal1 | 43 | **0** |
+| SafetyPointButton1 | 10 | **0** |
+| SafetyCarGoal1 | 467 | **0** |
+
+Over-refusal is gone: every remaining refusal is a step the environment would
+have charged for. Cost did not improve — SafetyCar 92.7 → 154.0 gated,
+SafetyPoint 38.3 → 83.7, SafetyButton 19.3 → 156.0 — and the reason is the next
+defect, which the measurement exposed rather than created.
+
+### D-1b · A precise refusal freezes the robot inside the hazard
+
+**Symptom, measured.** With disc keep-outs the gate has zero over-refusals and
+still increases cost on all three tasks: SafetyCar 92.7 ungated → 154.0 gated.
+The gated arm has 462 charged steps against the ungated arm's 278.
+
+**Cause.** A refusal is a one-step judgement. The gate rejects the step that
+would end inside a disc; the driver re-plans from where it is; that step is
+refused too. The robot stands still, and the environment charges it for standing
+inside the hazard. The shield converts a moving violation into a stationary one.
+
+**Fix.** When every forward step is refused and the start pose is inside or next
+to a keep-out, the gate must hand back a *setpoint that increases clearance*, not
+a hold. Requirements, in order:
+
+1. Monotone: each proposed pose strictly increases the minimum clearance to every
+   keep-out. A recovery path that dips deeper is worse than a hold.
+2. Inside the workspace: never propose leaving `workspace_aabb`.
+3. Bounded: `recovery_max_steps` and `recovery_step_m`, declared in the manifest.
+4. Never under the E_STOP latch: that state requires a human, and a gate that
+   drives itself out of an emergency stop is a hazard of its own.
+5. Deterministic, so the same refusal produces the same recovery.
+
+**Why this is the right fix and not a benchmark trick.** The measurement does not
+ask for a looser gate; it asks for a gate that can act. A refusal with no
+alternative is a policy statement the gate is not entitled to make.
+
 ### D-2 · Moving hazards are not modelled at all
 
 **Symptom.** SafetyButton regresses to 227 cost per episode. Its hazards move.

@@ -37,6 +37,20 @@ pass straight through an obstacle with both of its endpoints legal.
 - **Benchmark** — `benchmarks/vla_lag_and_safety_bench.py` across latency 0-500 ms
   and three execution modes. Reports **0 of 120 adversarial executions reaching
   the actuator, against 94 of 120 ungated**, at a 0% false-clamp rate.
+- **Shaped keep-outs** — `keep_out_shapes` accepts `circle`, `cylinder`, `sphere`,
+  `capsule` and `mesh`. The first four are analytic, so the gate still imports
+  only the standard library; a mesh needs the optional COAL extra and is refused
+  with that extra named when it is absent.
+- **Re-planned stops** — `clamp_strategy: "replan"` returns a jerk-limited
+  deceleration beside the legal prefix instead of truncating and leaving the arm
+  to absorb its own velocity. Ruckig replaces the analytic profile when installed.
+- **Forward kinematics** — `joint_trajectory_to_chunk(chain=...)` runs FK on a
+  URDF itself, so a ROS 2 `JointTrajectory` can be gated without an externally
+  captured Cartesian path. Pinocchio is the optional backend beyond a serial chain.
+- **Optional extras and `CREDITS.md`** — `lokahi[vla-geometry]`,
+  `lokahi[vla-kinematics]`, `lokahi[vla-replan]` and `lokahi[vla]`. Nothing
+  external is required at runtime and nothing external is vendored; every
+  project's licence and contribution is recorded.
 
 ### Fixed during the work
 
@@ -57,11 +71,16 @@ Two harnesses, both with their commands in `docs/BENCHMARKS.md`.
 - Adversarial and latency: 0 of 120 adversarial executions reach the actuator
   against 94 of 120 ungated, at a 0% false-clamp rate on benign chunks. Latency
   columns from this device are noise and are not published.
-- Safety-Gymnasium, 3 seeds, 1000 steps: SafetyCarGoal1 cost 92.7 -> 45.3 per
-  episode, at a real price — the gated car earns -0.072 reward against 2.547, and
-  467 of 619 refusals were steps the environment would not have charged for.
-  SafetyPointGoal1 regressed 38.3 -> 79.3 and SafetyButton1 regressed 19.3 ->
-  227.3, whose cause is that the task's moving hazards are never given to the gate.
+- Safety-Gymnasium, seeds 0, 1, 2, 1000 steps, run twice: once with keep-outs as
+  bounding boxes and once with the discs the suite actually charges on.
+  With boxes: cost 92.7 -> 45.3 on SafetyCarGoal1 but 467 of 1857 refusals were
+  steps the environment would not have charged for, and SafetyPoint 38.3 -> 79.3
+  and SafetyButton 19.3 -> 227.3 regressed. With discs: **false clamps fall to
+  zero on all three tasks** (43, 10, 467 -> 0, 0, 0) and cost does **not** improve
+  — SafetyCar 92.7 -> 154.0, SafetyPoint 38.3 -> 83.7, SafetyButton 19.3 -> 156.0.
+  The gate now refuses only steps the environment would have charged for, and a
+  refused step still leaves the robot standing in the hazard, which the
+  environment charges for every step it remains.
 
 A published claim that LOKAHI reduces constraint violations is therefore **not
 supported by this release**. The harness is real, the numbers are real, and they
