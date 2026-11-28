@@ -15,11 +15,13 @@ from the upstream runner documentation and are unverified on this host.
 
 ## What the workflows run
 
-Three jobs, mirroring `.github/workflows/ci.yml` step for step:
+Five jobs:
 
 | Job | Runs on | What it does |
 | --- | --- | --- |
-| `python` | `self-hosted` | Matrix over Python 3.10 / 3.11 / 3.12: builds the `wasm32-unknown-unknown` pre-flight module with cargo, then runs the 18 test, conformance, benchmark and demo entry points. |
+| `suite` | `self-hosted` | Matrix over Python 3.10 / 3.11 / 3.12 / 3.13: collects `tests/` with pytest, fails unless the collection is at least 757 tests including at least 353 from `tests/test_vla_*.py`, then runs the suite. |
+| `receipt` | `self-hosted` | Installs the wheel, drives a gated episode through `scripts/make_vla_receipt.py`, and asserts the `lokahi-vla-verify` exit-code contract: 0 intact, 1 tampered, 2 unreadable. |
+| `python` | `self-hosted` | Matrix over Python 3.10 / 3.11 / 3.12: builds the `wasm32-unknown-unknown` pre-flight module with cargo, runs `tests/test_audit_regressions.py` (four of its tests skip without that build), then runs the 8 conformance, benchmark and demo entry points. The rest of the unit tests are the `suite` job's, not this one's. |
 | `rust` | `self-hosted` | `cargo test --release` and the wasm32 release build in `tools/wasm_preflight`. |
 | `packaging` | `self-hosted` | Validates `pyproject.toml`, builds the wheel, installs it, runs `TestC3CLIFlows`, and fails if build artifacts show up as unignored git changes. |
 
@@ -238,8 +240,8 @@ the reverse is equally true: the tokens and endpoints are not interchangeable.
 
 ## Verifying the setup
 
-1. Push to `main`, or open a pull request against it — those are the triggers, plus
-   `workflow_dispatch` for a manual run from the Actions tab.
+1. Push to any branch, or open a pull request against any branch — those are the
+   triggers, plus `workflow_dispatch` for a manual run from the Actions tab.
 2. If a run stays queued with "no matching runner", the label is the problem: check
    that the runner's label list contains `self-hosted` (`gitea-runner config get
    runner.labels`), not only `ubuntu-latest`.

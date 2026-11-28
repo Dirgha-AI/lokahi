@@ -17,11 +17,14 @@
 
 name: LOKAHI CI
 
+# Every branch, every pull request. The VLA gate is the only thing between a
+# learned policy and an actuator, and no change anywhere in this tree may reach
+# main without the whole suite having run — the tests under tests/test_vla_*.py
+# included. Before the `suite` job existed, 353 of the suite's 757 tests
+# executed nowhere in CI, so a regression in the action gate shipped green.
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 defaults:
@@ -73,12 +76,12 @@ jobs:
         run: |
           set -euo pipefail
           venv="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/lokahi-venv-${{ matrix.python-version }}"
-          if [ ! -f "$venv/.lokahi-ci-ready" ]; then
+          if [ ! -f "$venv/.lokahi-ci-ready-v2" ]; then
             rm -rf "$venv"
             "$LOKAHI_PY" -m venv "$venv"
             "$venv/bin/python" -m pip install --upgrade pip
-            "$venv/bin/python" -m pip install "cryptography>=42.0" "wasmtime>=15.0"
-            : > "$venv/.lokahi-ci-ready"
+            "$venv/bin/python" -m pip install "cryptography>=42.0" "wasmtime>=15.0" "pytest>=7.0"
+            : > "$venv/.lokahi-ci-ready-v2"
           fi
           echo "LOKAHI_PY=$venv/bin/python" >> "$GITHUB_ENV"
 
@@ -101,46 +104,20 @@ jobs:
         working-directory: tools/wasm_preflight
         run: cargo build --target wasm32-unknown-unknown --release
 
-      - name: Core unit tests
+      # Four tests in this module skip themselves when the compiled module is
+      # absent, so they only mean anything in a job that has just built it. This
+      # is the same module the `suite` job runs, narrowed to the reason it exists
+      # here: the artefact.
+      - name: Audit regression tests that need the compiled WASM module
         run: |
-          "$LOKAHI_PY" tests/test_core.py
+          set -euo pipefail
+          "$LOKAHI_PY" -m pytest tests/test_audit_regressions.py -q
 
-      - name: Decisions tier tests (tier is off by default)
-        run: |
-          "$LOKAHI_PY" tests/test_decisions.py
-
-      - name: Threshold consent tests
-        run: |
-          "$LOKAHI_PY" tests/test_threshold_consent.py
-
-      - name: Fail-secure and WebXR tests
-        run: |
-          "$LOKAHI_PY" tests/test_failsecure.py
-
-      - name: Audit regression tests (C1-C4, H1-H3, M1, hardening)
-        run: |
-          "$LOKAHI_PY" tests/test_audit_regressions.py
-
-      - name: R1 feature tests (tool pinning, evidence packs, HTTP transport, OAuth, ACL)
-        run: |
-          "$LOKAHI_PY" tests/test_r1_features.py
-
-      - name: Telemetry tests (OTLP, Splunk, Elastic, webhook)
-        run: |
-          "$LOKAHI_PY" tests/test_telemetry.py
-
-      - name: Approval tests (links, channels, /approve)
-        run: |
-          "$LOKAHI_PY" tests/test_approvals.py
-
-      - name: Policy pack tests
-        run: |
-          "$LOKAHI_PY" tests/test_policy_packs.py
-
-      - name: Property tests (merge precedence, canonical stability)
-        run: |
-          "$LOKAHI_PY" tests/test_properties.py
-
+      # The rest of the unit tests live in the `suite` job, which collects a
+      # superset of what `"$LOKAHI_PY" tests/<file>.py` ran (verified file by
+      # file) and adds the 16 modules those scripts never touched. What remains
+      # here is everything that is not a pytest collection: the conformance run,
+      # the gateway self-test, the demos and the benchmarks.
       - name: Conformance suite
         run: |
           "$LOKAHI_PY" tools/conformance.py
@@ -172,6 +149,145 @@ jobs:
       - name: Kinetic Ahimsa robotics verification
         run: |
           "$LOKAHI_PY" tools/run_kinetic_evals.py
+
+  suite:
+    name: Test suite / Python ${{ matrix.python-version }}
+    runs-on: self-hosted
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is pyproject.toml's floor (`requires-python = ">=3.10"`); the
+        # range is open-ended, so the newest CPython the runner has runs too.
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Python ${{ matrix.python-version }}
+        run: |
+          set -euo pipefail
+          want="${{ matrix.python-version }}"
+          found=""
+          for cand in "python${want}" "python$(printf '%s' "$want" | tr -d '.')"; do
+            if command -v "$cand" >/dev/null 2>&1; then
+              got="$("$cand" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+              if [ "$got" = "$want" ]; then
+                found="$cand"
+                break
+              fi
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo "Python $want is not installed on this runner." >&2
+            echo "Default python3 reports: $(python3 -V 2>&1 || echo 'not found')" >&2
+            echo "Install python$want (or a python$want shim) and re-run, see docs/CI_LOCAL.md." >&2
+            exit 1
+          fi
+          echo "LOKAHI_PY=$(command -v "$found")" >> "$GITHUB_ENV"
+          "$found" -V
+
+      - name: Ensure venv with pytest and the runtime dependencies
+        run: |
+          set -euo pipefail
+          # A venv of its own: the `python` job caches one without pytest, so
+          # sharing it would let a stale marker hide the packages added here.
+          venv="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/lokahi-suite-venv-${{ matrix.python-version }}"
+          if [ ! -f "$venv/.lokahi-suite-ready" ]; then
+            rm -rf "$venv"
+            "$LOKAHI_PY" -m venv "$venv"
+            "$venv/bin/python" -m pip install --upgrade pip
+            "$venv/bin/python" -m pip install \
+              "pytest>=7.0" "cryptography>=42.0" "wasmtime>=15.0" numpy
+            : > "$venv/.lokahi-suite-ready"
+          fi
+          echo "LOKAHI_PY=$venv/bin/python" >> "$GITHUB_ENV"
+
+      # A green run on a subset proves nothing about the rest, and a collection
+      # error in one VLA module reads as a silent skip rather than a failure.
+      # Assert the floor explicitly so a disappearing test file fails the job.
+      - name: Collect the suite and assert its size
+        run: |
+          set -euo pipefail
+          "$LOKAHI_PY" -m pytest --collect-only -q tests > collected.txt
+          total=$(tail -n 1 collected.txt | awk '{print $1}')
+          vla=$(grep -c '^tests/test_vla_' collected.txt || true)
+          echo "collected total=$total vla=$vla"
+          test "$total" -ge 757 || { echo "only $total tests collected, expected at least 757" >&2; exit 1; }
+          test "$vla" -ge 353 || { echo "only $vla VLA tests collected, expected at least 353" >&2; exit 1; }
+
+      - name: Run the suite
+        run: |
+          set -euo pipefail
+          "$LOKAHI_PY" -m pytest tests -q
+
+  receipt:
+    # The receipt is the product: `lokahi-vla-verify` is the only program an
+    # auditor runs, and its contract is the exit code. This job installs the
+    # distribution, drives a real gated episode, and asserts 0 / 1 / 2.
+    name: Rollout receipt verify path
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Python 3.12
+        run: |
+          set -euo pipefail
+          found=""
+          for cand in python3.12 python312; do
+            if command -v "$cand" >/dev/null 2>&1; then
+              got="$("$cand" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+              if [ "$got" = "3.12" ]; then
+                found="$cand"
+                break
+              fi
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo "Python 3.12 is not installed on this runner." >&2
+            echo "Default python3 reports: $(python3 -V 2>&1 || echo 'not found')" >&2
+            exit 1
+          fi
+          echo "LOKAHI_PY=$(command -v "$found")" >> "$GITHUB_ENV"
+          "$found" -V
+
+      - name: Install the package the way a user does
+        run: |
+          set -euo pipefail
+          venv="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/lokahi-receipt-venv"
+          rm -rf "$venv"
+          "$LOKAHI_PY" -m venv "$venv"
+          "$venv/bin/python" -m pip install --upgrade pip
+          "$venv/bin/python" -m pip install ".[signatures]"
+          echo "LOKAHI_PY=$venv/bin/python" >> "$GITHUB_ENV"
+          echo "LOKAHI_VERIFY=$venv/bin/lokahi-vla-verify" >> "$GITHUB_ENV"
+
+      - name: Produce a signed receipt and a tampered copy
+        run: |
+          set -euo pipefail
+          mkdir -p receipt-out
+          "$LOKAHI_PY" scripts/make_vla_receipt.py receipt-out | tee pubkey.txt
+          echo "PUBKEY=$(cat pubkey.txt)" >> "$GITHUB_ENV"
+
+      - name: Intact receipt verifies (exit 0)
+        run: |
+          set -euo pipefail
+          "$LOKAHI_VERIFY" receipt-out/receipt.json --pubkey "$PUBKEY" | tee verify.txt
+          grep -q 'RECEIPT VERIFIED' verify.txt
+
+      - name: Tampered receipt is refused (exit 1)
+        run: |
+          set -euo pipefail
+          status=0
+          "$LOKAHI_VERIFY" receipt-out/tampered.json --pubkey "$PUBKEY" || status=$?
+          test "$status" -eq 1 || { echo "expected exit 1 for a tampered receipt, got $status" >&2; exit 1; }
+
+      - name: Unreadable receipt cannot be evaluated (exit 2)
+        run: |
+          set -euo pipefail
+          status=0
+          "$LOKAHI_VERIFY" receipt-out/absent.json --pubkey "$PUBKEY" || status=$?
+          test "$status" -eq 2 || { echo "expected exit 2 for a missing receipt, got $status" >&2; exit 1; }
 
   rust:
     name: Rust WASM kernel

@@ -4,7 +4,7 @@ Newest first. Version numbers are monotonic, so a gap in this list means nothing
 was ever tagged with that number. Every entry states what the release does
 **not** do, because that is the part an auditor reads first.
 
-## v1.4.0 (2026-11-26): VLA runtime safety
+## v1.4.0-draft (unreleased, tree state 2026-11-26): VLA runtime safety
 
 A gate for Vision-Language-Action policies, built on the existing engine rather
 than beside it. The two failure modes that matter for a chunked policy are

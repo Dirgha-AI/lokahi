@@ -1,12 +1,115 @@
 name: LOKAHI CI
 
+# Every branch, every pull request. The VLA gate is the only thing between a
+# learned policy and an actuator, and no change anywhere in this tree may reach
+# main without the whole suite having run — the tests under tests/test_vla_*.py
+# included. Before this job existed, 353 of the suite's 757 tests executed
+# nowhere in CI, so a regression in the action gate shipped green.
 on:
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
 
 jobs:
+  suite:
+    name: Test suite / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is pyproject.toml's floor (`requires-python = ">=3.10"`); the
+        # range is open-ended, so the newest CPython GitHub ships runs too.
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install "pytest>=7.0" "cryptography>=42.0" "wasmtime>=15.0" numpy
+
+    # A green run on a subset proves nothing about the rest, and a collection
+    # error in one VLA module reads as a silent skip rather than a failure.
+    # Assert the floor explicitly so a disappearing test file fails the job.
+    - name: Collect the suite and assert its size
+      run: |
+        set -euo pipefail
+        python -m pytest --collect-only -q tests > collected.txt
+        total=$(tail -n 1 collected.txt | awk '{print $1}')
+        vla=$(grep -c '^tests/test_vla_' collected.txt || true)
+        echo "collected total=$total vla=$vla"
+        test "$total" -ge 757 || { echo "only $total tests collected, expected at least 757"; exit 1; }
+        test "$vla" -ge 353 || { echo "only $vla VLA tests collected, expected at least 353"; exit 1; }
+
+    - name: Run the suite
+      run: python -m pytest tests -q --junitxml="junit-${{ matrix.python-version }}.xml"
+
+    - name: Upload the JUnit report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: junit-${{ matrix.python-version }}
+        path: junit-${{ matrix.python-version }}.xml
+
+  receipt:
+    # The receipt is the product: `lokahi-vla-verify` is the only program an
+    # auditor runs, and its contract is the exit code. This job installs the
+    # distribution, drives a real gated episode, and asserts 0 / 1 / 2.
+    name: Rollout receipt verify path
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install the package the way a user does
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install ".[signatures]"
+
+    - name: Produce a signed receipt and a tampered copy
+      run: |
+        set -euo pipefail
+        mkdir -p receipt-out
+        python scripts/make_vla_receipt.py receipt-out | tee pubkey.txt
+        echo "PUBKEY=$(cat pubkey.txt)" >> "$GITHUB_ENV"
+
+    - name: Intact receipt verifies (exit 0)
+      run: |
+        set -euo pipefail
+        lokahi-vla-verify receipt-out/receipt.json --pubkey "$PUBKEY" | tee verify.txt
+        grep -q 'RECEIPT VERIFIED' verify.txt
+
+    - name: Tampered receipt is refused (exit 1)
+      run: |
+        set -euo pipefail
+        status=0
+        lokahi-vla-verify receipt-out/tampered.json --pubkey "$PUBKEY" || status=$?
+        test "$status" -eq 1 || { echo "expected exit 1 for a tampered receipt, got $status"; exit 1; }
+
+    - name: Unreadable receipt cannot be evaluated (exit 2)
+      run: |
+        set -euo pipefail
+        status=0
+        lokahi-vla-verify receipt-out/absent.json --pubkey "$PUBKEY" || status=$?
+        test "$status" -eq 2 || { echo "expected exit 2 for a missing receipt, got $status"; exit 1; }
+
   python:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
@@ -26,7 +129,7 @@ jobs:
     - name: Install optional runtime dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install "cryptography>=42.0" "wasmtime>=15.0"
+        python -m pip install "cryptography>=42.0" "wasmtime>=15.0" "pytest>=7.0"
 
     - name: Build the WASM pre-flight module
       uses: dtolnay/rust-toolchain@stable
@@ -36,36 +139,18 @@ jobs:
       working-directory: tools/wasm_preflight
       run: cargo build --target wasm32-unknown-unknown --release
 
-    - name: Core unit tests
-      run: python tests/test_core.py
+    # Four tests in this module skip themselves when the compiled module is
+    # absent, so they only mean anything in a job that has just built it. This
+    # is the same module the `suite` job runs, narrowed to the reason it exists
+    # here: the artefact.
+    - name: Audit regression tests that need the compiled WASM module
+      run: python -m pytest tests/test_audit_regressions.py -q
 
-    - name: Decisions tier tests (tier is off by default)
-      run: python tests/test_decisions.py
-
-    - name: Threshold consent tests
-      run: python tests/test_threshold_consent.py
-
-    - name: Fail-secure and WebXR tests
-      run: python tests/test_failsecure.py
-
-    - name: Audit regression tests (C1-C4, H1-H3, M1, hardening)
-      run: python tests/test_audit_regressions.py
-
-    - name: R1 feature tests (tool pinning, evidence packs, HTTP transport, OAuth, ACL)
-      run: python tests/test_r1_features.py
-
-    - name: Telemetry tests (OTLP, Splunk, Elastic, webhook)
-      run: python tests/test_telemetry.py
-
-    - name: Approval tests (links, channels, /approve)
-      run: python tests/test_approvals.py
-
-    - name: Policy pack tests
-      run: python tests/test_policy_packs.py
-
-    - name: Property tests (merge precedence, canonical stability)
-      run: python tests/test_properties.py
-
+    # The rest of the unit tests live in the `suite` job, which collects a
+    # superset of what `python tests/<file>.py` ran (verified file by file) and
+    # adds the 16 modules those scripts never touched. What remains here is
+    # everything that is not a pytest collection: the conformance run, the
+    # gateway self-test, the demos and the benchmarks.
     - name: Conformance suite
       run: python tools/conformance.py
 
