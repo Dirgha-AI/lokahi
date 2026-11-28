@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Dirgha-AI/.github/main/assets/dirgha_banner.png" alt="LOKAHI — Deterministic Fail-Closed Policy Engine for AI Agents and Robots" width="100%">
+  <img src="assets/banner.png" alt="LOKAHI — Deterministic Fail-Closed Policy Engine for AI Agents and Robots" width="100%">
 </p>
 
 # LOKAHI
