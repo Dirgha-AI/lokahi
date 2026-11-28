@@ -11,16 +11,54 @@ directory:
 
 It prints the signing public key on stdout so the job can pin it.
 
-Run it against an installed wheel, not the source tree, so the entry point the
-job exercises is the one `pip install lokahi` ships:
+Run it from the checkout with plain `python` — a source-tree import fallback
+makes it work before `pip install -e .` as well as against an installed wheel:
 
     python scripts/make_vla_receipt.py out
 """
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
+import sys
 from pathlib import Path
+
+
+def _ensure_source_checkout_imports() -> None:
+    """Make this checkout's `tools/` importable as `lokahi` before install.
+
+    The wheel maps `tools/` to the `lokahi` package (see pyproject.toml). From a
+    fresh checkout that mapping does not exist, so a plain
+    `python scripts/make_vla_receipt.py out` would die with
+    ModuleNotFoundError: lokahi. Load the same directory under the installed
+    name, with a search path for its submodules, and let the package's own
+    `__init__` expose the tools that import each other by bare module name.
+    No wheel install and no PYTHONPATH shim required.
+    """
+    try:
+        import lokahi  # noqa: F401
+    except ModuleNotFoundError as exc:
+        if exc.name != "lokahi":
+            raise
+    else:
+        return
+
+    tools = Path(__file__).resolve().parents[1] / "tools"
+    init = tools / "__init__.py"
+    if not init.is_file():
+        raise ImportError(f"LOKAHI source package not found at {tools}")
+    spec = importlib.util.spec_from_file_location(
+        "lokahi", init, submodule_search_locations=[str(tools)]
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load LOKAHI source package from {init}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["lokahi"] = module
+    spec.loader.exec_module(module)
+
+
+_ensure_source_checkout_imports()
 
 from lokahi import CANON_JCS, digest
 from lokahi.lokahi_consent import Ed25519Signer

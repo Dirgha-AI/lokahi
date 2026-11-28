@@ -362,7 +362,13 @@ class ReceiptVerification:
     def failed(self) -> list[str]:
         return [check["check"] for check in self.checks if not check["passed"]]
 
-    def render(self) -> str:
+    def render(self, *, include_verdict: bool = True) -> str:
+        """Render the checks, and the verdict line when asked for one.
+
+        The CLI prints the checks and then one verdict line. On failure that
+        line goes to stderr, so passing `include_verdict=False` for the stdout
+        half keeps the error from being printed twice.
+        """
         lines = []
         for check in self.checks:
             mark = "PASS" if check["passed"] else "FAIL"
@@ -370,13 +376,14 @@ class ReceiptVerification:
             if check["detail"]:
                 line += f" - {check['detail']}"
             lines.append(line)
-        lines.append("")
-        if self.ok:
-            lines.append("RECEIPT VERIFIED")
-        elif self.status == STATUS_UNVERIFIABLE:
-            lines.append(f"RECEIPT UNVERIFIABLE: {self.reason}")
-        else:
-            lines.append(f"RECEIPT FAILED VERIFICATION: {self.reason}")
+        if include_verdict:
+            lines.append("")
+            if self.ok:
+                lines.append("RECEIPT VERIFIED")
+            elif self.status == STATUS_UNVERIFIABLE:
+                lines.append(f"RECEIPT UNVERIFIABLE: {self.reason}")
+            else:
+                lines.append(f"RECEIPT FAILED VERIFICATION: {self.reason}")
         return "\n".join(lines)
 
 
@@ -571,13 +578,22 @@ def verify_receipt(
         except Exception as exc:  # noqa: BLE001 - cryptography missing or bad key bytes
             report.add("signature", False, f"cannot load ed25519 key: {exc}", fatal=True)
             return report
-        report.add(
-            "signature",
-            bool(verifier.verify(payload, value)),
-            "ed25519 signature matches the body"
-            if pubkey
-            else "ed25519 signature matches the body (pinned: no)",
-        )
+        signature_ok = bool(verifier.verify(payload, value))
+        # The detail describes the outcome it belongs to. A hard-coded success
+        # string on a FAIL line reads as "the signature matched" to anyone
+        # scanning the output, which is exactly backwards on a tampered receipt.
+        if signature_ok:
+            detail = "ed25519 signature matches the body"
+            if not pubkey:
+                detail += " (integrity only, not identity; pinned: no — the document carries its own key)"
+        else:
+            detail = (
+                "ed25519 signature does not match the body: the signed content changed "
+                "or the receipt was signed by a different key"
+            )
+            if not pubkey:
+                detail += " (pinned: no — the document carries its own key)"
+        report.add("signature", signature_ok, detail)
         return report
 
     if algorithm == ALGORITHM_HMAC:
@@ -590,7 +606,13 @@ def verify_receipt(
         except ValueError as exc:
             report.add("signature", False, f"unusable hmac key: {exc}", fatal=True)
             return report
-        report.add("signature", bool(verifier.verify(payload, value)), "hmac-sha256 signature matches the body")
+        signature_ok = bool(verifier.verify(payload, value))
+        detail = (
+            "hmac-sha256 signature matches the body"
+            if signature_ok
+            else "hmac-sha256 signature does not match the body: the signed content changed or the shared key is wrong"
+        )
+        report.add("signature", signature_ok, detail)
         return report
 
     report.add("signature", False, f"unknown signature algorithm {algorithm!r}", fatal=True)
@@ -655,7 +677,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             sort_keys=True,
         ))
     else:
-        print(report.render())
+        # On failure the verdict line is printed once, on stderr with the
+        # reason. Rendering the checks without it keeps stdout from carrying a
+        # second, identical "RECEIPT FAILED VERIFICATION" line.
+        print(report.render(include_verdict=report.ok))
     if report.ok:
         return 0
     label = "UNVERIFIABLE" if report.status == STATUS_UNVERIFIABLE else "FAILED VERIFICATION"

@@ -118,7 +118,10 @@ def test_tampered_ledger_root_exits_one(tmp_path, ed_signer):
     path = write(tmp_path, document)
     result = run_cli(path, "--pubkey", document["signature"]["public_key"])
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "FAILED VERIFICATION" in result.stdout
+    # The verdict line is printed once, on stderr; stdout carries the checks.
+    assert "FAILED VERIFICATION" in result.stderr
+    assert result.stdout.count("FAILED VERIFICATION") == 0
+    assert result.stderr.count("RECEIPT FAILED VERIFICATION:") == 1
     assert "ledger_root" in result.stderr
 
 
