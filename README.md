@@ -1,29 +1,23 @@
 <h1 align="center">LOKAHI</h1>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
-  <a href="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml"><img src="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="tests/test_core.py"><img src="https://img.shields.io/badge/unit%20tests-270%20passed-brightgreen.svg" alt="Unit tests: 270 passed"></a>
-  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/protocol-MCP-purple.svg" alt="Protocol: MCP"></a>
-</p>
-
-<p align="center">
   <a href="https://pypi.org/project/lokahi/"><img src="https://img.shields.io/pypi/v/lokahi.svg?color=blue" alt="PyPI version"></a>
-  <a href="https://pypi.org/project/lokahi/"><img src="https://img.shields.io/pypi/pyversions/lokahi.svg" alt="Python Versions"></a>
+  <a href="https://pypi.org/project/lokahi/"><img src="https://img.shields.io/pypi/pyversions/lokahi.svg?color=blue" alt="Python Versions"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg" alt="License: Apache-2.0"></a>
-  <a href="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml"><img src="https://github.com/Dirgha-AI/lokahi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="tests/test_core.py"><img src="https://img.shields.io/badge/tests-102%20passed-brightgreen.svg" alt="Tests: 102 passed"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/protocol-MCP-purple.svg" alt="Protocol: MCP"></a>
-  <a href="#fail-closed-by-design"><img src="https://img.shields.io/badge/security-fail--closed-red.svg" alt="Security: Fail-Closed"></a>
+  <a href="#3-core-invariants"><img src="https://img.shields.io/badge/security-fail--closed-red.svg" alt="Security: Fail-Closed"></a>
 </p>
 
 <p align="center">
-  <em>Checks what an autonomous AI agent is about to do against community-signed rules before every tool call runs. Silence means no.</em>
+  <em>Deterministic fail-closed policy firewall for AI agents and robots — part of the <a href="https://dirgha.ai">Dirgha Suite</a>. Silence means no.</em>
 </p>
 
 ---
 
-**Status:** v1.3.1 is a reference implementation for pilots and production integration. It features a four-layer cascade: WASM deterministic pre-flight, 15-rule policy engine, m-of-n Ed25519 threshold consent with named group quorum and local RBAC, and fail-secure human handoff. Audit findings of record are tracked in [`AUDIT_FINDINGS_2026-11-23.md`](AUDIT_FINDINGS_2026-11-23.md) and backed by the unit suite and a 50-scenario adversarial benchmark. See [`docs/QUICKSTART.md`](docs/QUICKSTART.md) to get running in five minutes.
+**Status:** v1.3.1 is a reference implementation for pilots and production integration. It ships a four-layer cascade: WASM deterministic pre-flight, 15-rule policy engine, m-of-n Ed25519 consent with named group quorum and local RBAC, RFC 8785 canonical JSON v2 digests, VLA physical-envelope gating (`lokahi.vla`), and fail-secure human handoff. Audit findings of record are tracked in [`AUDIT_FINDINGS_2026-11-23.md`](AUDIT_FINDINGS_2026-11-23.md) and [`docs/AUDIT-FINDINGS-2026-11-27.md`](docs/AUDIT-FINDINGS-2026-11-27.md). See [`docs/QUICKSTART.md`](docs/QUICKSTART.md) to get running in five minutes.
+
+> **Part of the Dirgha Suite** — the open-source security harness and payment rail for AI, autonomous agents, and robots:
+> [`Dirgha`](https://github.com/Dirgha-AI/dirgha) (runtime, gateway & host execution) · [`Arniko`](https://github.com/Dirgha-AI/arniko) (code & supply-chain verification) · **LOKAHI** (deterministic policy engine) · [`Abundance`](https://github.com/Dirgha-AI/abundance-protocol) (non-custodial spend & payment rail, preview). Docs: [dirgha.ai/docs/gate-and-ledger](https://dirgha.ai/docs/gate-and-ledger).
 
 The runtime is a four-layer cascade: a WASM deterministic pre-flight, the 15-rule engine, m-of-n Ed25519 consent, then a fail-secure state with human WebXR handoff. The [learned decisions tier](#experimental-learned-decisions-tier) is **experimental and is not part of the safety claim**; the guarantee comes from the deterministic rules and the consent framework.
 
@@ -92,8 +86,8 @@ LOKAHI enforces **deterministic object capabilities outside the model context**:
 
 1. **No independent security review.** The audit at [`AUDIT_REPORT.md`](AUDIT_REPORT.md) is internal. No external cryptographic or safety review has been completed.
 2. **Ed25519 is not threshold signing.** Each validator signs independently and the gate counts distinct valid signatures. There is no key splitting and no FROST group key; a compromised gate operator can see every signature.
-3. **It decides but does not relay.** LOKAHI returns a decision; your MCP client or wrapper sends allowed calls to the tool. It does not yet inspect tool responses (indirect prompt injection arrives there), and it does not pin tool descriptions, so a server can change a tool schema after approval.
-4. **stdio only.** There is no OAuth 2.1 / Streamable HTTP resource-server support yet, so it cannot front remote MCP servers on its own.
+3. **It decides on tool requests.** LOKAHI returns a decision and can proxy stdio or Streamable HTTP MCP traffic with tool-schema pinning, but does not replace OS-level sandboxing or inspect arbitrary downstream side effects.
+4. **Remote auth scope.** Streamable HTTP and bearer/OAuth 2.1 checks are implemented for local and in-VPC gateways; federated multi-tenant SaaS OIDC/SCIM is not shipped in the open-source core.
 5. **Approval windows reset on restart.** A restart opens a new window; it never approves anything, but in-progress windows are lost.
 6. **Distinct people are assumed, not proven.** Two different approver IDs are trusted to be two different people. Disjointness attestation is roadmap item R3.
 7. **The ledger is a local JSONL file** written by one process. It is hash-chained but not Merkle-proved, not witness-cosigned, and not remotely immutable.
