@@ -1,23 +1,16 @@
-<h1 align="center">LOKAHI</h1>
-
 <p align="center">
-  <a href="https://pypi.org/project/lokahi/"><img src="https://img.shields.io/pypi/v/lokahi.svg?color=blue" alt="PyPI version"></a>
-  <a href="https://pypi.org/project/lokahi/"><img src="https://img.shields.io/pypi/pyversions/lokahi.svg?color=blue" alt="Python Versions"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green.svg" alt="License: Apache-2.0"></a>
-  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/protocol-MCP-purple.svg" alt="Protocol: MCP"></a>
-  <a href="#3-core-invariants"><img src="https://img.shields.io/badge/security-fail--closed-red.svg" alt="Security: Fail-Closed"></a>
+  <img src="https://raw.githubusercontent.com/Dirgha-AI/.github/main/assets/dirgha_banner.png" alt="LOKAHI — Deterministic Fail-Closed Policy Engine for AI Agents and Robots" width="100%">
 </p>
 
-<p align="center">
-  <em>Deterministic fail-closed policy firewall for AI agents and robots — part of the <a href="https://dirgha.ai">Dirgha Suite</a>. Silence means no.</em>
-</p>
+# LOKAHI
 
----
+**Deterministic, fail-closed runtime policy firewall for AI agents and robots.**
 
-**Status:** v1.3.1 is a reference implementation for pilots and production integration. It ships a four-layer cascade: WASM deterministic pre-flight, 15-rule policy engine, m-of-n Ed25519 consent with named group quorum and local RBAC, RFC 8785 canonical JSON v2 digests, VLA physical-envelope gating (`lokahi.vla`), and fail-secure human handoff. Audit findings of record are tracked in [`AUDIT_FINDINGS_2026-11-23.md`](AUDIT_FINDINGS_2026-11-23.md) and [`docs/AUDIT-FINDINGS-2026-11-27.md`](docs/AUDIT-FINDINGS-2026-11-27.md). See [`docs/QUICKSTART.md`](docs/QUICKSTART.md) to get running in five minutes.
+LOKAHI sits between an autonomous agent or robot controller and the tools or actuators it calls. Before any action executes, LOKAHI evaluates it against human-authored, cryptographically signed boundary rules, enforces multi-party Ed25519 human approval on irreversible actions, and records every verdict in an RFC 8785 hash-chained trace that verifies offline.
 
-> **Part of the Dirgha Suite** — the open-source security harness and payment rail for AI, autonomous agents, and robots:
-> [`Dirgha`](https://github.com/Dirgha-AI/dirgha) (runtime, gateway & host execution) · [`Arniko`](https://github.com/Dirgha-AI/arniko) (code & supply-chain verification) · **LOKAHI** (deterministic policy engine) · [`Abundance`](https://github.com/Dirgha-AI/abundance-protocol) (non-custodial spend & payment rail, preview). Docs: [dirgha.ai/docs/gate-and-ledger](https://dirgha.ai/docs/gate-and-ledger).
+If a manifest is unsigned, a key is missing, or an approval window expires without human consent, **silence means refusal**.
+
+**Status:** v1.3.1 (Apache-2.0, zero runtime dependencies, `pip install lokahi`, `754` passing tests). Ships the four-layer deterministic cascade (WASM pre-flight, 15-rule policy engine, m-of-n Ed25519 consent with local RBAC, and fail-secure handoff), RFC 8785 canonical JSON v2 digests, and the Vision-Language-Action (`lokahi.vla`) physical-envelope gate. Part of the [Dirgha Suite](https://github.com/Dirgha-AI) alongside [`Dirgha`](https://github.com/Dirgha-AI/dirgha), [`Arniko`](https://github.com/Dirgha-AI/arniko), and [`Abundance`](https://github.com/Dirgha-AI/abundance). Contact: [`hello@dirgha.ai`](mailto:hello@dirgha.ai). See [`docs/QUICKSTART.md`](docs/QUICKSTART.md) to get running in five minutes.
 
 The runtime is a four-layer cascade: a WASM deterministic pre-flight, the 15-rule engine, m-of-n Ed25519 consent, then a fail-secure state with human WebXR handoff. The [learned decisions tier](#experimental-learned-decisions-tier) is **experimental and is not part of the safety claim**; the guarantee comes from the deterministic rules and the consent framework.
 
