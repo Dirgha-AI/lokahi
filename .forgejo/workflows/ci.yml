@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -88,6 +88,8 @@ jobs:
       - name: Ensure Rust and the wasm32 target
         run: |
           set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/root/.cargo/bin:$PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           if ! command -v cargo >/dev/null 2>&1; then
             echo "cargo is not on PATH; the WASM pre-flight module cannot be built." >&2
             exit 1
@@ -102,7 +104,9 @@ jobs:
 
       - name: Build the WASM pre-flight module
         working-directory: tools/wasm_preflight
-        run: cargo build --target wasm32-unknown-unknown --release
+        run: |
+          export PATH="$HOME/.cargo/bin:/root/.cargo/bin:$PATH"
+          cargo build --target wasm32-unknown-unknown --release
 
       # Four tests in this module skip themselves when the compiled module is
       # absent, so they only mean anything in a job that has just built it. This
@@ -157,9 +161,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.10 is pyproject.toml's floor (`requires-python = ">=3.10"`); the
-        # range is open-ended, so the newest CPython the runner has runs too.
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        # Self-hosted runner runs Python 3.12 (multi-Python matrix stays in .github/workflows/ci.yml).
+        python-version: ["3.12"]
     steps:
       - uses: actions/checkout@v4
 
@@ -299,6 +302,8 @@ jobs:
       - name: Ensure Rust and the wasm32 target
         run: |
           set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/root/.cargo/bin:$PATH"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           if ! command -v cargo >/dev/null 2>&1; then
             echo "cargo is not on PATH; cannot run the Rust kernel job." >&2
             exit 1
@@ -312,11 +317,15 @@ jobs:
 
       - name: Unit tests
         working-directory: tools/wasm_preflight
-        run: cargo test --release
+        run: |
+          export PATH="$HOME/.cargo/bin:/root/.cargo/bin:$PATH"
+          cargo test --release
 
       - name: Build for wasm32
         working-directory: tools/wasm_preflight
-        run: cargo build --target wasm32-unknown-unknown --release
+        run: |
+          export PATH="$HOME/.cargo/bin:/root/.cargo/bin:$PATH"
+          cargo build --target wasm32-unknown-unknown --release
 
   packaging:
     name: Packaging and CLI
